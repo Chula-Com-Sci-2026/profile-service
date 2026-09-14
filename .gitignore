@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.env
+
+# local API scratchpad
+route.rest
+
+# personal Claude Code settings
+.claude/settings.local.json

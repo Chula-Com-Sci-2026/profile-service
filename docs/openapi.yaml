@@ -1,0 +1,214 @@
+openapi: 3.1.0
+
+info:
+  title: Profile Service
+  version: 1.0.0
+  summary: Runner profiles for Can't Run Alone.
+  description: |
+    The HTTP contract for Profile Service. Derived from `domain.md`, which is
+    authoritative: this file maps its four operations onto one resource, and adds
+    an operational liveness endpoint that the model knows nothing about.
+
+    The Identity Service assigns the `userId`, so a client knows the URI before
+    the profile exists — which is why creation is a `PUT` rather than a `POST`
+    to a collection. There is no collection: profiles cannot be listed or
+    searched (domain.md §3).
+
+    Text fields are trimmed before the length rules apply, so a value of only
+    whitespace is rejected as empty.
+
+security:
+  - bearerAuth: []
+
+paths:
+  /v1/profiles/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 64 }
+
+    put:
+      operationId: createProfile
+      summary: Create a runner's profile
+      description: Create only. The server answers 409 if a profile already exists — one profile per runner. Use PATCH to change one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileWrite' }
+      responses:
+        '201': { $ref: '#/components/responses/Profile' }
+        '400': { $ref: '#/components/responses/Problem' }   # body is malformed or has an unknown field
+        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
+        '403': { $ref: '#/components/responses/Problem' }   # a runner may only create their own profile
+        '409': { $ref: '#/components/responses/Problem' }   # a profile already exists
+        '422': { $ref: '#/components/responses/Problem' }   # a value breaks a rule in domain.md §4
+        default: { $ref: '#/components/responses/Problem' }
+
+    get:
+      operationId: getProfile
+      summary: Read a runner's profile
+      responses:
+        '200': { $ref: '#/components/responses/Profile' }
+        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
+        '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
+        default: { $ref: '#/components/responses/Problem' }
+
+    patch:
+      operationId: updateProfile
+      summary: Change a runner's profile
+      description: RFC 7396 merge patch. `userId` never changes.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/ProfilePatch' }
+      responses:
+        '200': { $ref: '#/components/responses/Profile' }
+        '400': { $ref: '#/components/responses/Problem' }   # body is malformed or has an unknown field
+        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
+        '403': { $ref: '#/components/responses/Problem' }   # only the owner may change a profile
+        '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
+        '422': { $ref: '#/components/responses/Problem' }   # a value breaks a rule in domain.md §4
+        default: { $ref: '#/components/responses/Problem' }
+
+    delete:
+      operationId: deleteProfile
+      summary: Delete a runner's profile, permanently
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
+        '403': { $ref: '#/components/responses/Problem' }   # only the owner may delete a profile
+        '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
+        default: { $ref: '#/components/responses/Problem' }
+
+  /health:
+    get:
+      operationId: health
+      summary: Liveness probe
+      security: []   # open: an orchestrator has no token
+      description: >-
+        200 while the process is running. It does not check the database — restarting
+        this service cannot fix a database outage. Unversioned on purpose: an operational
+        endpoint, not part of the profile API.
+      responses:
+        '200':
+          description: Alive
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ok }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        A JWT issued by the Identity Service and verified locally on every request — not
+        trusted because a gateway forwarded it. Its subject is the caller's `userId`, which
+        is what "owner only" in domain.md §3 is checked against.
+
+  responses:
+    Profile:
+      description: The profile
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Profile' }
+
+    Problem:
+      description: RFC 9457 problem details
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    ProfileFields:
+      type: object
+      description: >-
+        The writable fields. An unset scalar is absent, never null; an unset set is empty.
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 50 }
+        bio:         { type: string, maxLength: 500 }
+        avatarRef:   { type: string, maxLength: 128, description: A key to the image in this service's object storage. Storage is not implemented yet. }
+        birthYear:   { type: integer, minimum: 1900, description: Not later than the current year. }
+        gender:      { $ref: '#/components/schemas/Gender' }
+        area:        { $ref: '#/components/schemas/Area' }
+        pace:        { type: integer, minimum: 150, maximum: 900, description: Seconds per kilometre. }
+        volume:      { type: integer, minimum: 0, maximum: 500000, description: Metres per week. }
+        experience:  { $ref: '#/components/schemas/Experience' }
+        preferredDistances:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Distance' }
+        preferredRunTimes:
+          type: array
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/RunTime' }
+
+    Profile:
+      description: >-
+        What a response always contains. `required` here means present on the wire,
+        not that the runner had to answer — see `ProfileWrite` for what a client must send.
+      allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
+      required: [userId, displayName, birthYear, preferredDistances, preferredRunTimes]
+      unevaluatedProperties: false
+      properties:
+        userId: { type: string, minLength: 1, maxLength: 64 }
+
+    ProfilePatch:
+      description: >-
+        A merge patch (RFC 7396). An absent key is untouched; null clears the field.
+        `displayName` and `birthYear` cannot be cleared — a profile cannot exist without
+        them. A set is replaced by sending a new array, never by sending null.
+      type: object
+      unevaluatedProperties: false
+      properties:
+        displayName: { $ref: '#/components/schemas/ProfileFields/properties/displayName' }
+        birthYear:   { $ref: '#/components/schemas/ProfileFields/properties/birthYear' }
+        bio:         { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/bio' },        { type: 'null' }] }
+        avatarRef:   { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/avatarRef' },  { type: 'null' }] }
+        gender:      { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/gender' },     { type: 'null' }] }
+        area:        { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/area' },       { type: 'null' }] }
+        experience:  { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/experience' }, { type: 'null' }] }
+        pace:        { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/pace' },       { type: 'null' }] }
+        volume:      { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/volume' },     { type: 'null' }] }
+        preferredDistances: { $ref: '#/components/schemas/ProfileFields/properties/preferredDistances' }
+        preferredRunTimes:  { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }
+
+    ProfileWrite:
+      description: No `userId` in the body — it is the path parameter.
+      allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
+      required: [displayName, birthYear]
+      unevaluatedProperties: false
+
+    Gender:     { type: string, enum: [male, female, non_binary] }
+    Area:       { type: string, enum: [lumphini, benchakitti, chatuchak] }
+    Experience: { type: string, enum: [beginner, intermediate, advanced] }
+    Distance:   { type: string, enum: ['5k', '10k', half_marathon, marathon] }
+
+    RunTime:
+      type: object
+      additionalProperties: false
+      required: [dayOfWeek, timeOfDay]
+      properties:
+        dayOfWeek: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] }
+        timeOfDay:
+          type: string
+          enum: [early_morning, morning, midday, afternoon, evening, night]
+          description: >-
+            Bangkok local time (UTC+7). early_morning 05:00–08:00 · morning 08:00–11:00 ·
+            midday 11:00–14:00 · afternoon 14:00–17:00 · evening 17:00–20:00 · night 20:00–05:00
+
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        title:  { type: string }
+        status: { type: integer }
+        detail: { type: string, description: 'Human prose, for people. Do not parse.' }
