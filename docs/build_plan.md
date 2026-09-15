@@ -178,6 +178,8 @@ Order is error handler outermost, then request context, then auth, then routes �
 - Graceful shutdown: stop accepting, close idle connections, end the pool, and give up after a deadline rather than hanging
 - `scripts/seed.ts` — reads `scripts/seed.json` and inserts through `createProfile`, so a row that breaks §4 fails at seed time rather than landing in the table. Refuses to run when `NODE_ENV=production`; it truncates first
 
+- It also seeds avatars, the way a client would: ask for a presigned URL, PUT the bytes, then set `avatarRef` through `updateProfile`. No shortcut through the S3 client, so seeding exercises the same handshake the API offers. The key cannot live in `seed.json` for the same reason it is not a client's to choose — it carries a uuid that exists only once the upload is authorised. Uploads run after the transaction commits: holding one open across calls to storage would be a poor trade for a demo seeder. A runner with no `avatars/{userId}.png` simply has no avatar
+
 **Done when** the service starts, serves all four operations end to end, answers `/health` and `/ready`, seeds, and stops cleanly — with `/ready` answering 503 for `SHUTDOWN_DRAIN_MS` while still accepting, before the server closes.
 
 ### 6 — Packaging

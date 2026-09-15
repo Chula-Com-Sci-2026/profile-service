@@ -9,48 +9,71 @@
     "displayName": "Beam",
     "birthYear": 1994,
     "bio": "Slow miles, long talks. Usually at the park before work.",
-    "avatarRef": "av_01j9x7c3e7b219f4d",
     "gender": "non_binary",
     "area": "lumphini",
     "experience": "intermediate",
     "pace": 330,
     "volume": 42000,
-    "preferredDistances": ["10k", "half_marathon"],
+    "preferredDistances": [
+      "10k",
+      "half_marathon"
+    ],
     "preferredRunTimes": [
-      { "dayOfWeek": "tue", "timeOfDay": "early_morning" },
-      { "dayOfWeek": "thu", "timeOfDay": "early_morning" },
-      { "dayOfWeek": "sat", "timeOfDay": "morning" }
+      {
+        "dayOfWeek": "tue",
+        "timeOfDay": "early_morning"
+      },
+      {
+        "dayOfWeek": "thu",
+        "timeOfDay": "early_morning"
+      },
+      {
+        "dayOfWeek": "sat",
+        "timeOfDay": "morning"
+      }
     ]
   },
   {
     "userId": "2c9f5b7d10",
     "displayName": "Ploy",
     "birthYear": 1991,
-    "avatarRef": "av_01j9x8m2f0c47ad31",
     "gender": "female",
     "area": "benchakitti",
     "experience": "advanced",
     "pace": 245,
     "volume": 95000,
-    "preferredDistances": ["half_marathon", "marathon"],
+    "preferredDistances": [
+      "half_marathon",
+      "marathon"
+    ],
     "preferredRunTimes": [
-      { "dayOfWeek": "sun", "timeOfDay": "early_morning" }
+      {
+        "dayOfWeek": "sun",
+        "timeOfDay": "early_morning"
+      }
     ]
   },
   {
     "userId": "e86a1f4c92",
     "displayName": "Bank",
     "birthYear": 2003,
-    "avatarRef": "av_01j9xb5t9e60d2f8c",
     "gender": "male",
     "area": "chatuchak",
     "experience": "beginner",
     "pace": 600,
     "volume": 8000,
-    "preferredDistances": ["5k"],
+    "preferredDistances": [
+      "5k"
+    ],
     "preferredRunTimes": [
-      { "dayOfWeek": "mon", "timeOfDay": "evening" },
-      { "dayOfWeek": "wed", "timeOfDay": "evening" }
+      {
+        "dayOfWeek": "mon",
+        "timeOfDay": "evening"
+      },
+      {
+        "dayOfWeek": "wed",
+        "timeOfDay": "evening"
+      }
     ]
   },
   {
@@ -58,14 +81,19 @@
     "displayName": "Ann",
     "birthYear": 1987,
     "bio": "Night owl. Happy to pace anyone.",
-    "avatarRef": "av_01j9xd7k4b83e15a9",
     "area": "lumphini",
     "experience": "advanced",
     "pace": 300,
     "volume": 60000,
     "preferredRunTimes": [
-      { "dayOfWeek": "tue", "timeOfDay": "night" },
-      { "dayOfWeek": "fri", "timeOfDay": "night" }
+      {
+        "dayOfWeek": "tue",
+        "timeOfDay": "night"
+      },
+      {
+        "dayOfWeek": "fri",
+        "timeOfDay": "night"
+      }
     ]
   }
 ]

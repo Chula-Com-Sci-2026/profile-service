@@ -37,16 +37,15 @@ export type Config = {
 /** This service's own name, not a setting — a token is for us or it is for someone else. */
 const AUDIENCE = 'profile-service'
 
-const REQUIRED = [
-  'DATABASE_URL',
-  'IDENTITY_JWKS_URL',
-  'IDENTITY_ISSUER',
+const STORAGE_REQUIRED = [
   'OBJECT_STORAGE_ENDPOINT',
   'OBJECT_STORAGE_PUBLIC_ENDPOINT',
   'OBJECT_STORAGE_BUCKET',
   'OBJECT_STORAGE_ACCESS_KEY',
   'OBJECT_STORAGE_SECRET_KEY',
 ] as const
+
+const REQUIRED = ['DATABASE_URL', 'IDENTITY_JWKS_URL', 'IDENTITY_ISSUER', ...STORAGE_REQUIRED] as const
 
 /** pino's levels. Checked here so a typo fails with the rest, not later inside pino. */
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const
@@ -102,6 +101,29 @@ export function loadDatabaseUrl(env: Environment = process.env): string {
   return url
 }
 
+export type ObjectStorageConfig = Config['objectStorage']
+
+function objectStorageFrom(env: Environment, problems: string[]): ObjectStorageConfig {
+  return {
+    endpoint: read(env, 'OBJECT_STORAGE_ENDPOINT'),
+    publicEndpoint: read(env, 'OBJECT_STORAGE_PUBLIC_ENDPOINT'),
+    bucket: read(env, 'OBJECT_STORAGE_BUCKET'),
+    accessKeyId: read(env, 'OBJECT_STORAGE_ACCESS_KEY'),
+    secretAccessKey: read(env, 'OBJECT_STORAGE_SECRET_KEY'),
+    uploadExpiresInSeconds: seconds(read(env, 'OBJECT_STORAGE_UPLOAD_EXPIRES_SECONDS'), problems),
+  }
+}
+
+/** Storage alone, for the seed — it uploads avatars but has no use for an Identity setting. */
+export function loadObjectStorage(env: Environment = process.env): ObjectStorageConfig {
+  const problems = STORAGE_REQUIRED.filter((name) => read(env, name).length === 0).map(
+    (name) => `${name} is required`,
+  )
+  const storage = objectStorageFrom(env, problems)
+  if (problems.length > 0) throw new Error(`configuration: ${problems.join('; ')}`)
+  return storage
+}
+
 export function loadConfig(env: Environment = process.env): Config {
   const problems = REQUIRED.filter((name) => read(env, name).length === 0).map(
     (name) => `${name} is required`,
@@ -114,7 +136,7 @@ export function loadConfig(env: Environment = process.env): Config {
 
   const listenOn = port(read(env, 'PORT'), problems)
   const drainFor = milliseconds(read(env, 'SHUTDOWN_DRAIN_MS'), 'SHUTDOWN_DRAIN_MS', 0, problems)
-  const uploadWindow = seconds(read(env, 'OBJECT_STORAGE_UPLOAD_EXPIRES_SECONDS'), problems)
+  const storage = objectStorageFrom(env, problems)
 
   if (problems.length > 0) {
     throw new Error(`configuration: ${problems.join('; ')}`)
@@ -131,13 +153,6 @@ export function loadConfig(env: Environment = process.env): Config {
       issuer: read(env, 'IDENTITY_ISSUER'),
       audience: AUDIENCE,
     },
-    objectStorage: {
-      endpoint: read(env, 'OBJECT_STORAGE_ENDPOINT'),
-      publicEndpoint: read(env, 'OBJECT_STORAGE_PUBLIC_ENDPOINT'),
-      bucket: read(env, 'OBJECT_STORAGE_BUCKET'),
-      accessKeyId: read(env, 'OBJECT_STORAGE_ACCESS_KEY'),
-      secretAccessKey: read(env, 'OBJECT_STORAGE_SECRET_KEY'),
-      uploadExpiresInSeconds: uploadWindow,
-    },
+    objectStorage: storage,
   }
 }
