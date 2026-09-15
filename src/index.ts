@@ -42,7 +42,9 @@ const app = createApp({
   useCases: {
     createProfile: createProfile(repository),
     getProfile: getProfile(repository),
-    updateProfile: updateProfile(repository),
+    updateProfile: updateProfile(repository, avatars, (userId, error) => {
+      logger.error({ err: error, userId }, 'an avatar object was orphaned by a profile change')
+    }),
     deleteProfile: deleteProfile(repository, avatars, (userId, error) => {
       // The profile is gone and its images are not. Storage and the database cannot commit
       // together, so this is logged and tolerated rather than retried into a hung delete.

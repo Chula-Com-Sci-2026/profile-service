@@ -216,6 +216,8 @@ The four decisions, taken:
 - **`avatars/{userId}/{uuid}`.** A fresh uuid per upload, so replacing an avatar cannot collide with a cached copy of the old one. Grouping by `userId` is what pays for the next decision
 - **Best-effort delete, orphans tolerated.** `deleteProfile` asks storage to drop the runner's prefix after the row is gone; a storage failure is logged and the profile stays deleted, because the two cannot commit together and a profile that refuses to die is the worse outcome. Because keys are prefixed by `userId`, this needs no read of the profile first — `deleteProfile` is still one statement against the repository
 
+  The same applies to *replacing* an avatar, which is the commoner case: a fresh uuid per upload means the previous object is unreachable the moment `avatarRef` changes. `updateProfile` drops the displaced key, after the write and best-effort for the same reason — the change is the thing that must not be lost. Cache-safe replacement would otherwise cost one orphan per edit rather than one per deletion
+
 The authoritative cleanup for orphans would be a sweeper comparing keys against existing profiles, and that needs a bulk read, which §3 forbids. The same decision deferred for Discovery blocks it here.
 
 **Done when** an image can be uploaded, its key stored on the profile, and the image fetched back — verified end to end against real MinIO: create 201, authorise 201, PUT to MinIO 200, PATCH 200, anonymous GET 200 with identical bytes, delete 204 and the image then 404.

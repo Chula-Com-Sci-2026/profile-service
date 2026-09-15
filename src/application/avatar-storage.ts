@@ -16,6 +16,11 @@ export type AvatarUpload = {
 export type AvatarStorage = {
   authoriseUpload: (userId: string) => Promise<AvatarUpload>
   /**
+   * Removes one object, by the key a profile used to hold. Best effort, like removeAll: an
+   * orphaned image is a better outcome than a profile that would not accept a change.
+   */
+  remove: (avatarRef: string) => Promise<void>
+  /**
    * Removes every avatar a runner has. Best effort by nature: storage and the database cannot
    * commit together, and losing the profile is not the outcome to prefer.
    */

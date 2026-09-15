@@ -4,7 +4,7 @@
 
 ## 1. Bounded context
 
-**Profile Service** holds what a runner says about themselves: what they are like, and how, when and where they usually run. It is the source of truth for that — no other service stores it. Profile images are the exception: the image itself lives in object storage owned by this service, and only its key is stored here. **Not built yet.**
+**Profile Service** holds what a runner says about themselves: what they are like, and how, when and where they usually run. It is the source of truth for that — no other service stores it. Profile images are the exception: the image itself lives in object storage owned by this service, and only its key is stored here.
 
 ### Context map
 

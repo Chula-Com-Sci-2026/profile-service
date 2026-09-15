@@ -25,6 +25,7 @@ const storage = {
       avatarRef: `avatars/${userId}/abc`,
       expiresInSeconds: 300,
     }),
+  remove: () => Promise.resolve(),
   removeAll: () => Promise.resolve(),
 }
 
@@ -46,7 +47,7 @@ beforeAll(async () => {
     useCases: {
       createProfile: createProfile(repository),
       getProfile: getProfile(repository),
-      updateProfile: updateProfile(repository),
+      updateProfile: updateProfile(repository, storage, () => {}),
       deleteProfile: deleteProfile(repository, storage, () => {}),
       startAvatarUpload: startAvatarUpload(repository, storage),
     },

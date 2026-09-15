@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -52,6 +53,10 @@ export function createAvatarStorage(options: ObjectStorageOptions): AvatarStorag
         { expiresIn: options.uploadExpiresInSeconds },
       )
       return { uploadUrl, avatarRef, expiresInSeconds: options.uploadExpiresInSeconds }
+    },
+
+    remove: async (avatarRef) => {
+      await operations.send(new DeleteObjectCommand({ Bucket: options.bucket, Key: avatarRef }))
     },
 
     removeAll: async (userId) => {
