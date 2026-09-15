@@ -1,5 +1,5 @@
 import { createMiddleware } from 'hono/factory'
-import { type JWTVerifyGetKey, jwtVerify } from 'jose'
+import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from 'jose'
 import type { Env } from './context.ts'
 import { UnauthorizedError } from './errors.ts'
 
@@ -49,4 +49,15 @@ export function authentication({ jwks, issuer, audience }: AuthenticationOptions
     c.set('caller', { userId: subject })
     await next()
   })
+}
+
+/**
+ * Identity's published keys, fetched and cached.
+ *
+ * Lives here rather than in the composition root so `jose` stays inside `interface/http`, the
+ * layer that owns authentication. Rotation needs no redeploy: a token carrying an unknown key
+ * id makes jose fetch the set again.
+ */
+export function remoteIdentityKeys(jwksUrl: string): JWTVerifyGetKey {
+  return createRemoteJWKSet(new URL(jwksUrl))
 }
