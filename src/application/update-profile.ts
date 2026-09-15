@@ -35,7 +35,7 @@ export function updateProfile(
     // database cannot commit together, and the change is the thing that must not be lost.
     const displaced = current.avatarRef
     if (displaced !== undefined && displaced !== next.avatarRef) {
-      await storage.remove(displaced).catch((error: unknown) => onOrphan(userId, error))
+      await storage.remove(userId, displaced).catch((error: unknown) => onOrphan(userId, error))
     }
 
     return next

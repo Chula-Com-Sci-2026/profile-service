@@ -55,21 +55,47 @@ export function createAvatarStorage(options: ObjectStorageOptions): AvatarStorag
       return { uploadUrl, avatarRef, expiresInSeconds: options.uploadExpiresInSeconds }
     },
 
-    remove: async (avatarRef) => {
+    remove: async (userId, avatarRef) => {
+      // The key came from a request body, and every profile is readable, so a runner could name
+      // someone else's key and have it deleted for them. The prefix is the proof of ownership.
+      if (!avatarRef.startsWith(prefixFor(userId))) {
+        throw new Error(`refusing to remove ${avatarRef}: it is outside ${prefixFor(userId)}`)
+      }
       await operations.send(new DeleteObjectCommand({ Bucket: options.bucket, Key: avatarRef }))
     },
 
     removeAll: async (userId) => {
-      const listed = await operations.send(
-        new ListObjectsV2Command({ Bucket: options.bucket, Prefix: prefixFor(userId) }),
-      )
-      const keys = (listed.Contents ?? []).flatMap((object) =>
-        object.Key === undefined ? [] : [{ Key: object.Key }],
-      )
-      if (keys.length === 0) return
-      await operations.send(
-        new DeleteObjectsCommand({ Bucket: options.bucket, Delete: { Objects: keys } }),
-      )
+      // A page at a time: ListObjectsV2 returns at most a thousand keys and DeleteObjects
+      // accepts at most a thousand, so without the loop a runner past that keeps the tail of
+      // their images in a public bucket while this reports success.
+      let continuationToken: string | undefined
+      do {
+        const listed = await operations.send(
+          new ListObjectsV2Command({
+            Bucket: options.bucket,
+            Prefix: prefixFor(userId),
+            ContinuationToken: continuationToken,
+          }),
+        )
+        const keys = (listed.Contents ?? []).flatMap((object) =>
+          object.Key === undefined ? [] : [{ Key: object.Key }],
+        )
+        if (keys.length > 0) {
+          const deleted = await operations.send(
+            new DeleteObjectsCommand({ Bucket: options.bucket, Delete: { Objects: keys } }),
+          )
+          // DeleteObjects answers 200 with a per-key Errors array rather than rejecting, so
+          // without this a policy that denies deletion looks like a clean sweep and the caller
+          // never logs the orphans it is relying on being told about.
+          const failures = deleted.Errors ?? []
+          if (failures.length > 0) {
+            throw new Error(
+              `could not remove ${failures.length} of ${keys.length} objects: ${failures[0]?.Key} ${failures[0]?.Message}`,
+            )
+          }
+        }
+        continuationToken = listed.IsTruncated === true ? listed.NextContinuationToken : undefined
+      } while (continuationToken !== undefined)
     },
   }
 }

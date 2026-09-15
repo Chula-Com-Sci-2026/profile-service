@@ -34,7 +34,10 @@ services:
 
   # Provisioning, not application logic: the bucket exists before the service needs it, and it
   # is readable anonymously because an avatar is a picture a runner chose to show other runners.
-  # Keys carry a uuid, so the URL is unguessable even though the bucket is open.
+  # Keys carry a uuid, so the URL is unguessable even though the bucket is open — which only
+  # holds if the keys cannot be listed. `mc anonymous set download` grants s3:ListBucket as well
+  # as s3:GetObject, so an anonymous request could enumerate every key and with it every runner
+  # who has an avatar. The policy below grants s3:GetObject and nothing else.
   #
   # Named for the service, not for what is in it. Keys are `avatars/{userId}/{uuid}`, and a
   # bucket also called `avatars` makes every path-style URL read /avatars/avatars/… — and
@@ -48,9 +51,22 @@ services:
       - sh
       - -c
       - |
+        cat > /tmp/public-read.json <<'JSON'
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "AWS": ["*"] },
+              "Action": ["s3:GetObject"],
+              "Resource": ["arn:aws:s3:::profile-service/*"]
+            }
+          ]
+        }
+        JSON
         mc alias set store http://minio:9000 minioadmin minioadmin
         mc mb --ignore-existing store/profile-service
-        mc anonymous set download store/profile-service
+        mc anonymous set-json /tmp/public-read.json store/profile-service
 
   # Same image as the service, different command, run once and gone. Never on the service's
   # boot: three replicas starting together would be three migrations against one schema.

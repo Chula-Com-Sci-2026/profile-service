@@ -16,8 +16,13 @@ export class FakeAvatarStorage implements AvatarStorage {
     }
   }
 
-  async remove(avatarRef: string): Promise<void> {
+  async remove(userId: string, avatarRef: string): Promise<void> {
     if (this.failOnRemove) throw new Error('storage is unreachable')
+    // The real adapter refuses a key outside the runner's prefix; so does this one, or a test
+    // could pass while the thing it stands in for would throw.
+    if (!avatarRef.startsWith(`avatars/${userId}/`)) {
+      throw new Error(`refusing to remove ${avatarRef}: it is outside avatars/${userId}/`)
+    }
     this.removedKeys.push(avatarRef)
   }
 

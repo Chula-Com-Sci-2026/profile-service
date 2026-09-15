@@ -120,3 +120,22 @@ describe('updateProfile — the avatar it displaces', () => {
     expect(orphans).toEqual(['7f3a9c2e15'])
   })
 })
+
+describe('updateProfile — an avatar that is not yours', () => {
+  it('refuses to delete a key belonging to another runner', async () => {
+    // Every profile is readable and avatarRef is client-supplied, so a runner can name someone
+    // else's key on their own profile and then clear it. Verified as a live attack before this
+    // existed: three authorised requests, and the victim's image was gone.
+    const repository = new InMemoryProfileRepository()
+    const storage = new FakeAvatarStorage()
+    repository.given(aProfile({ avatarRef: 'avatars/somebody-else/their-image' }))
+    const orphans: string[] = []
+
+    await updateProfile(repository, storage, (userId) => orphans.push(userId))('7f3a9c2e15', {
+      avatarRef: null,
+    })
+
+    expect(storage.removedKeys).toEqual([])
+    expect(orphans).toEqual(['7f3a9c2e15'])
+  })
+})
