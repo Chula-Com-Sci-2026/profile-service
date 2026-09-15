@@ -21,10 +21,19 @@ export type UseCases = {
   deleteProfile: DeleteProfile
 }
 
+/**
+ * What `/ready` consults. Injected, so the HTTP layer knows nothing about pools or signals.
+ */
+export type Readiness = {
+  isDraining: () => boolean
+  canServe: () => Promise<boolean>
+}
+
 export type AppOptions = {
   useCases: UseCases
   logger: Logger
   authentication: AuthenticationOptions
+  readiness: Readiness
 }
 
 const PROFILE = '/v1/profiles/:userId'
@@ -50,7 +59,7 @@ async function jsonBody(c: Context<Env>): Promise<unknown> {
  * `/v1/*`, not globally, so `/health` never reaches it: that mirrors the contract, where
  * `/health` is the one operation carrying `security: []`.
  */
-export function createApp({ useCases, logger, authentication: auth }: AppOptions): Hono<Env> {
+export function createApp({ useCases, logger, authentication: auth, readiness }: AppOptions): Hono<Env> {
   const app = new Hono<Env>()
 
   app.onError(errorHandler(logger))
@@ -58,7 +67,17 @@ export function createApp({ useCases, logger, authentication: auth }: AppOptions
   app.use('*', requestContext(logger))
   app.use('/v1/*', authentication(auth))
 
+  // Liveness: is the process wedged? It must keep answering 200 while draining, because the
+  // orchestrator's answer to a failing liveness probe is to restart — the wrong response to a
+  // deliberate shutdown.
   app.get('/health', (c) => c.json({ status: 'ok' }))
+
+  // Readiness: should traffic come here? Unlike /health this does check the database, because
+  // the answer to "not right now" is to route elsewhere, not to restart.
+  app.get('/ready', async (c) => {
+    if (readiness.isDraining()) return c.json({ status: 'draining' }, 503)
+    return (await readiness.canServe()) ? c.json({ status: 'ready' }) : c.json({ status: 'unavailable' }, 503)
+  })
 
   app.put(PROFILE, ownsTheProfile(), async (c) => {
     const body = profileWrite.parse(await jsonBody(c))

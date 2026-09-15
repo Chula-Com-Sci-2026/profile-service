@@ -10,6 +10,13 @@ import pg from 'pg'
  */
 export type Database = {
   db: NodePgDatabase
+  /**
+   * Can we reach the database right now? Never throws — a probe wants an answer, not an error.
+   *
+   * It lives here so the composition root does not have to import `sql` from drizzle to ask,
+   * which would put the ORM outside `infrastructure/` in the one file lint cannot check.
+   */
+  ping: () => Promise<boolean>
   /** Closes idle connections and waits for busy ones. Part of a clean shutdown. */
   end: () => Promise<void>
 }
@@ -29,5 +36,17 @@ export function createDatabase(
 ): Database {
   const pool = new pg.Pool({ connectionString })
   pool.on('error', onIdleError)
-  return { db: drizzle(pool), end: () => pool.end() }
+
+  return {
+    db: drizzle(pool),
+    ping: async () => {
+      try {
+        await pool.query('SELECT 1')
+        return true
+      } catch {
+        return false
+      }
+    },
+    end: () => pool.end(),
+  }
 }

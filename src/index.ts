@@ -31,6 +31,9 @@ const database = createDatabase(config.databaseUrl, (error) => {
 })
 const repository = new DrizzleProfileRepository(database.db)
 
+/** Flipped before anything stops accepting, so /ready answers 503 first. */
+let draining = false
+
 const app = createApp({
   useCases: {
     createProfile: createProfile(repository),
@@ -44,6 +47,7 @@ const app = createApp({
     issuer: config.identity.issuer,
     audience: config.identity.audience,
   },
+  readiness: { isDraining: () => draining, canServe: () => database.ping() },
 })
 
 const server = serve({ fetch: app.fetch, port: config.port }, ({ port }) => {
@@ -62,11 +66,13 @@ server.on('error', (error: Error) => {
  * `docker stop` waits ten seconds and then kills the process mid-request.
  */
 const SHUTDOWN_DEADLINE_MS = 10_000
-let shuttingDown = false
 
 async function shutdown(signal: string): Promise<void> {
-  if (shuttingDown) return
-  shuttingDown = true
+  if (draining) return
+  // First, so /ready answers 503 before the server stops accepting. The grace window between
+  // the two belongs to the orchestrator — a preStop delay — not to a sleep baked in here,
+  // which would slow every Ctrl-C in development.
+  draining = true
   logger.info({ signal }, 'shutting down')
 
   // Give up rather than hang: a process that will not exit is worse than one that exits badly.

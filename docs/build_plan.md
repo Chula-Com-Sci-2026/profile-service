@@ -146,7 +146,7 @@ The middleware in this phase are factories. The base logger and the config objec
 
 Order is error handler outermost, then request context, then auth, then routes — the only arrangement in which the error handler can catch what the others throw. **Auth is mounted on `/v1/*`, not globally**, so `/health` never reaches it. That mirrors openapi.yaml, where `/health` is the one operation carrying `security: []`, and unlike relying on registration order it survives someone reshuffling the routes.
 
-- Hono routes for the four verbs on `/v1/profiles/:userId`, plus `GET /health` returning `{"status":"ok"}` without touching the database — `/health` is the one public endpoint
+- Hono routes for the four verbs on `/v1/profiles/:userId`, plus the two operational endpoints — `GET /health`, which touches nothing, and `GET /ready`, which pings the database through an injected probe. Both are public: an orchestrator and a load balancer have no token
 - One middleware, first in the chain, establishes the request context: it reads `traceparent` or `X-Request-Id`, generates a UUID when neither is present (`node:crypto` — no dependency), echoes it back on the response, and puts `log = base.child({ requestId })` on the context. Every line written while serving that request then carries the id, with no logger threaded through call signatures. `hono/logger` exists but writes prose rather than JSON, so it is not used
 - One middleware verifies the bearer JWT from Identity **locally** with `jose` and produces a typed `caller` from its subject. No route, use case or domain object ever sees a header or a token. Ownership is then one comparison: caller vs the `userId` in the path
 
@@ -177,7 +177,7 @@ Order is error handler outermost, then request context, then auth, then routes �
 - Graceful shutdown: stop accepting, close idle connections, end the pool, and give up after a deadline rather than hanging
 - `scripts/seed.ts` — reads `scripts/seed.json` and inserts through `createProfile`, so a row that breaks §4 fails at seed time rather than landing in the table. Refuses to run when `NODE_ENV=production`; it truncates first
 
-**Done when** the service starts, serves all four operations end to end, answers `/health`, seeds, and stops cleanly.
+**Done when** the service starts, serves all four operations end to end, answers `/health` and `/ready`, seeds, and stops cleanly — with `/ready` turning 503 before the server stops accepting.
 
 ### 6 — Packaging
 
@@ -186,7 +186,7 @@ Until here the service runs on a laptop. This phase makes it an artifact.
 - **Multi-stage `Dockerfile`** — a build stage running `npm ci` and `npm run build`, then a runtime stage on the same `node:24-alpine` minor with `npm ci --omit=dev` and only `dist/` copied across. No TypeScript, no test framework, no source in the shipped image
 - **`.dockerignore` first** — without one, `.env` enters the build context and can reach the image. That is a credential leak, not a size problem
 - Run as the image's own non-root `node` user
-- **`HEALTHCHECK` against `/health`** — already public, already free of the database, and now doing the job it was designed for
+- **`HEALTHCHECK` against `/ready`**, not `/health` — compose's `depends_on: service_healthy` gates whether to send work, which is a readiness question. `/health` stays the liveness signal for whatever restarts containers
 - The service joins `docker-compose.yml` beside Postgres, `depends_on` its healthcheck, so `docker compose up` is the whole demonstration
 - **SIGTERM is load-bearing.** Docker signals PID 1, and Node installs no default handler there, so phase 5's graceful shutdown is what stands between `docker stop` and ten seconds of hanging followed by SIGKILL mid-request
 - **Migrations are a separate one-shot run of the same image**, never automatic on boot — three replicas starting together would otherwise be three concurrent migrations against one schema. Same artifact, different command
@@ -212,7 +212,7 @@ Four decisions, none made: proxy or presigned upload; public bucket or presigned
 | **Authentication** | A JWT issued by Identity, verified **locally** on every request — not trusted because a gateway forwarded it. Its subject is the caller. Ownership is **access policy, not domain**: it lives in `openapi.yaml` as `bearerAuth` and the 401/403 responses, and domain.md stays silent on who may act |
 | **Time-of-day buckets** | Bangkok local time (UTC+7) |
 | **The `area` list** | Stays a closed union. It becomes reference data owned elsewhere only if the list outgrows a handful |
-| **Readiness probe** | Not adding one. `/health` is liveness, which is what an orchestrator restarts on |
+| **Probes** | Two, because they answer different questions. Liveness asks whether the process is wedged and its failure means *restart*, so `/health` checks nothing and keeps answering 200 while draining — failing it during a deliberate shutdown would have the orchestrator restart a process that is already leaving. Readiness asks whether traffic should come here and its failure means *route elsewhere*, so `/ready` does check the database and answers 503 while draining. This reverses an earlier decision to have liveness only; the drain window is what changed it. The grace period between `/ready` turning 503 and the server refusing connections belongs to the orchestrator — a `preStop` delay — not to a sleep baked into the process, which would slow every Ctrl-C in development |
 | **Boundary enforcement** | ESLint import zones, failing the build |
 | **Imports** | Relative specifiers carry `.ts` and TypeScript rewrites them to `.js`. The usual convention spells the extension `.js` in source; it was rejected for naming a file that does not exist. `moduleResolution: "nodenext"` makes a missing extension a compile error |
 | **Build** | `tsc` to `dist/`, no bundler. Native type stripping means `node src/index.ts` runs the source unaided, so `tsx` was dropped — `node --watch` covers the dev loop and dev then resolves modules the way production does. Both esbuild and `tsx` itself stay in the tree regardless — drizzle-kit and vite pull them — so the gain is one fewer tool of ours to reason about, not fewer bytes |

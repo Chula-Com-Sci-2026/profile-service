@@ -14,6 +14,8 @@ import type { Env } from '../../src/interface/http/context.ts'
 import { documentedResponses, exercised, expectContract } from './contract.ts'
 import { anIdentity, type Identity } from './identity.ts'
 
+const alwaysReady = { isDraining: () => false, canServe: () => Promise.resolve(true) }
+
 const NOK = '7f3a9c2e15'
 const BEAM = 'b41d8e0a63'
 
@@ -37,6 +39,17 @@ beforeAll(async () => {
     },
     logger: pino({ level: 'silent' }),
     authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+    readiness: {
+      isDraining: () => false,
+      canServe: async () => {
+        try {
+          await db.execute(sql`SELECT 1`)
+          return true
+        } catch {
+          return false
+        }
+      },
+    },
   })
 })
 
@@ -258,6 +271,7 @@ describe('GET /health', () => {
       },
       logger: pino({ level: 'silent' }),
       authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+      readiness: alwaysReady,
     })
     await expectContract('health', 200, await isolated.request('/health'))
   })
@@ -295,6 +309,7 @@ describe('an unexpected failure', () => {
       },
       logger: pino({ level: 'silent' }),
       authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+      readiness: alwaysReady,
     })
   }
 
@@ -373,6 +388,7 @@ describe('a SyntaxError from below the route', () => {
       },
       logger: pino({ level: 'silent' }),
       authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+      readiness: alwaysReady,
     })
     const token = await identity.tokenFor(NOK)
     const response = await parsedBadJson.request(`/v1/profiles/${NOK}`, {
@@ -401,6 +417,47 @@ describe('a userId outside the bounds the contract declares', () => {
 
   it('fails §4 on create, like any other bad field — 422', async () => {
     await expectContract('createProfile', 422, await put(tooLong, minimal))
+  })
+})
+
+describe('GET /ready', () => {
+  const withReadiness = (readiness: {
+    isDraining: () => boolean
+    canServe: () => Promise<boolean>
+  }): ReturnType<typeof createApp> =>
+    createApp({
+      useCases: {
+        createProfile: () => Promise.reject(new Error('unused')),
+        getProfile: () => Promise.reject(new Error('unused')),
+        updateProfile: () => Promise.reject(new Error('unused')),
+        deleteProfile: () => Promise.reject(new Error('unused')),
+      },
+      logger: pino({ level: 'silent' }),
+      authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+      readiness,
+    })
+
+  it('200 when serving — and no token needed, like /health', async () => {
+    await expectContract('readiness', 200, await app.request('/ready'))
+  })
+
+  it('503 while draining, so traffic is routed elsewhere rather than the process restarted', async () => {
+    const response = await withReadiness({ isDraining: () => true, canServe: () => Promise.resolve(true) }).request('/ready')
+    const body = await response.clone().json()
+    await expectContract('readiness', 503, response)
+    expect(body).toEqual({ status: 'draining' })
+  })
+
+  it('503 when the database is out of reach — unlike /health, which does not ask', async () => {
+    const unreachable = { isDraining: () => false, canServe: () => Promise.resolve(false) }
+    const response = await withReadiness(unreachable).request('/ready')
+    const body = await response.clone().json()
+    await expectContract('readiness', 503, response)
+    expect(body).toEqual({ status: 'unavailable' })
+
+    // The same instance still reports itself alive: a drained or database-less process is not
+    // a wedged one, and restarting it would fix nothing.
+    await expectContract('health', 200, await withReadiness(unreachable).request('/health'))
   })
 })
 

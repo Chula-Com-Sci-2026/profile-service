@@ -7,7 +7,7 @@ info:
   description: |
     The HTTP contract for Profile Service. Derived from `domain.md`, which is
     authoritative: this file maps its four operations onto one resource, and adds
-    an operational liveness endpoint that the model knows nothing about.
+    two operational endpoints the model knows nothing about.
 
     The Identity Service assigns the `userId`, so a client knows the URI before
     the profile exists — which is why creation is a `PUT` rather than a `POST`
@@ -94,9 +94,11 @@ paths:
       summary: Liveness probe
       security: []   # open: an orchestrator has no token
       description: >-
-        200 while the process is running. It does not check the database — restarting
-        this service cannot fix a database outage. Unversioned on purpose: an operational
-        endpoint, not part of the profile API.
+        200 while the process is running. It does not check the database — restarting this
+        service cannot fix a database outage — and it stays 200 during a graceful shutdown,
+        because a failing liveness probe tells an orchestrator to restart, which is the wrong
+        answer to a deliberate drain. Use /ready to decide whether to send traffic.
+        Unversioned on purpose: an operational endpoint, not part of the profile API.
       responses:
         '200':
           description: Alive
@@ -107,6 +109,36 @@ paths:
                 required: [status]
                 properties:
                   status: { type: string, const: ok }
+
+  /ready:
+    get:
+      operationId: readiness
+      summary: Readiness probe
+      security: []   # open: a load balancer has no token
+      description: >-
+        Whether this instance can serve right now. Unlike /health it does check the database,
+        because the answer to "do not send me traffic" is to route elsewhere, not to restart.
+        It answers 503 while shutting down and while the database is unreachable. A failing
+        readiness probe should remove the instance from rotation and nothing more.
+      responses:
+        '200':
+          description: Ready to serve
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ready }
+        '503':
+          description: Not serving — shutting down, or the database is out of reach
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [draining, unavailable] }
 
 components:
   securitySchemes:
