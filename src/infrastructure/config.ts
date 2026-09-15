@@ -13,6 +13,12 @@ export type Config = {
   port: number
   logLevel: string
   databaseUrl: string
+  /**
+   * How long `/ready` answers 503 before the server stops accepting, so whatever routes
+   * traffic has time to notice. Zero by default: nothing polls in development, and a wait
+   * on every Ctrl-C is a worse daily cost than a brief refusal during a deploy.
+   */
+  shutdownDrainMs: number
   identity: {
     jwksUrl: string
     issuer: string
@@ -32,6 +38,15 @@ type Environment = Record<string, string | undefined>
 
 function read(env: Environment, name: string): string {
   return (env[name] ?? '').trim()
+}
+
+function milliseconds(raw: string, name: string, fallback: number): number {
+  if (raw.length === 0) return fallback
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 60_000) {
+    throw new Error(`${name} must be a whole number of milliseconds from 0 to 60000, not ${JSON.stringify(raw)}`)
+  }
+  return parsed
 }
 
 function port(raw: string): number {
@@ -72,6 +87,7 @@ export function loadConfig(env: Environment = process.env): Config {
     port: port(read(env, 'PORT')),
     logLevel,
     databaseUrl: read(env, 'DATABASE_URL'),
+    shutdownDrainMs: milliseconds(read(env, 'SHUTDOWN_DRAIN_MS'), 'SHUTDOWN_DRAIN_MS', 0),
     identity: {
       jwksUrl: read(env, 'IDENTITY_JWKS_URL'),
       issuer: read(env, 'IDENTITY_ISSUER'),

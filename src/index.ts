@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises'
 import { serve } from '@hono/node-server'
 import { pino } from 'pino'
 import { createProfile } from './application/create-profile.ts'
@@ -69,13 +70,18 @@ const SHUTDOWN_DEADLINE_MS = 10_000
 
 async function shutdown(signal: string): Promise<void> {
   if (draining) return
-  // First, so /ready answers 503 before the server stops accepting. The grace window between
-  // the two belongs to the orchestrator — a preStop delay — not to a sleep baked in here,
-  // which would slow every Ctrl-C in development.
+
+  // First, so /ready answers 503 while the server is still accepting. Without a pause here the
+  // 503 is unobservable — the socket closes in the same tick — and whatever routes traffic
+  // keeps sending it. Zero by default, so Ctrl-C stays instant in development.
   draining = true
-  logger.info({ signal }, 'shutting down')
+  logger.info({ signal, drainMs: config.shutdownDrainMs }, 'draining')
+  if (config.shutdownDrainMs > 0) await delay(config.shutdownDrainMs)
+
+  logger.info('no longer accepting connections')
 
   // Give up rather than hang: a process that will not exit is worse than one that exits badly.
+  // The deadline covers the close, not the drain, so the two cannot fight over one budget.
   const deadline = setTimeout(() => {
     logger.error({ deadlineMs: SHUTDOWN_DEADLINE_MS }, 'shutdown took too long, exiting anyway')
     process.exit(1)
