@@ -191,7 +191,9 @@ Until here the service runs on a laptop. This phase makes it an artifact.
 - **SIGTERM is load-bearing.** Docker signals PID 1, and Node installs no default handler there, so phase 5's graceful shutdown is what stands between `docker stop` and ten seconds of hanging followed by SIGKILL mid-request
 - **Migrations are a separate one-shot run of the same image**, never automatic on boot — three replicas starting together would otherwise be three concurrent migrations against one schema. Same artifact, different command: `node dist/migrate.js`. In compose it is a service gated on Postgres being healthy, with the service gated on it having completed, so `docker compose up` is one command
 
-  `src/migrate.ts` uses drizzle-orm's migrator rather than the `drizzle-kit` CLI, because drizzle-kit is a devDependency and the runtime image is installed with `--omit=dev`. `npm run db:migrate` was switched to the same path, so the migration code that ships is the one every integration run exercises
+  `src/migrate.ts` uses drizzle-orm's migrator rather than the `drizzle-kit` CLI, because drizzle-kit is a devDependency and the runtime image is installed with `--omit=dev`. `npm run db:migrate` and the integration harness both go through `infrastructure/migrations.ts`, so the migration code that ships is the code every test run exercises — pool budgets included
+
+  **The budgets differ by purpose, and that matters.** `REQUEST_BUDGETS` caps a query at two seconds, which is right for a request and fatal for a migration: `CREATE INDEX` on a populated table would abort, and with the service gated on the migration completing, the stack would refuse to start. `MIGRATION_BUDGETS` has no query limit. Both are measured — a three-second statement succeeds under one and fails under the other
 
 - **`stop_grace_period` must exceed `SHUTDOWN_DRAIN_MS` plus the close deadline**, or the container is killed mid-drain and the graceful shutdown is worse than none. Compose sets 20s against a 3s drain and a 10s deadline; the startup log prints the total because nothing inside the process can check the grace
 

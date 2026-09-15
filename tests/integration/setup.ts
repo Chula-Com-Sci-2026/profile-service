@@ -1,8 +1,7 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
-import { drizzle } from 'drizzle-orm/node-postgres'
-import { migrate } from 'drizzle-orm/node-postgres/migrator'
-import pg from 'pg'
 import type { TestProject } from 'vitest/node'
+import { MIGRATION_BUDGETS, createDatabase } from '../../src/infrastructure/database.ts'
+import { applyMigrations } from '../../src/infrastructure/migrations.ts'
 
 /**
  * The integration suite brings its own database.
@@ -26,12 +25,13 @@ export default async function setup(project: TestProject): Promise<() => Promise
   try {
     const databaseUrl = container.getConnectionUri()
 
-    // Migrate once, here — a suite that migrates per file races itself.
-    const pool = new pg.Pool({ connectionString: databaseUrl })
+    // Migrate once, here — a suite that migrates per file races itself. Through the same
+    // code and the same pool budgets the image uses, so the two cannot drift apart unnoticed.
+    const database = createDatabase(databaseUrl, () => undefined, MIGRATION_BUDGETS)
     try {
-      await migrate(drizzle(pool), { migrationsFolder: 'drizzle' })
+      await applyMigrations(database)
     } finally {
-      await pool.end()
+      await database.end()
     }
 
     project.provide('databaseUrl', databaseUrl)

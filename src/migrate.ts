@@ -1,7 +1,6 @@
-import { fileURLToPath } from 'node:url'
-import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { loadDatabaseUrl } from './infrastructure/config.ts'
-import { createDatabase } from './infrastructure/database.ts'
+import { MIGRATION_BUDGETS, createDatabase } from './infrastructure/database.ts'
+import { applyMigrations } from './infrastructure/migrations.ts'
 
 /**
  * Applies the migrations in `drizzle/`, then exits.
@@ -10,23 +9,23 @@ import { createDatabase } from './infrastructure/database.ts'
  * together would otherwise be three concurrent migrations against one schema. Same image,
  * different command.
  *
- * It uses drizzle-orm's migrator rather than the drizzle-kit CLI because drizzle-kit is a
- * devDependency and the runtime image is installed with `--omit=dev`. Using it here too, and
- * not only in the test harness, means the migration path that ships is the one that is
- * exercised on every integration run.
- *
- * The folder is resolved against this module, not the working directory, so it is found from
- * `src/migrate.ts` and from `dist/migrate.js` alike.
+ * MIGRATION_BUDGETS rather than the request-path ones — a migration may legitimately run for
+ * minutes, and the two-second query limit that protects a request would abort it.
  */
-const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url))
-
-const database = createDatabase(loadDatabaseUrl(), (error) => {
-  console.error('an idle database connection failed:', error.message)
-})
+const database = createDatabase(
+  loadDatabaseUrl(),
+  (error) => console.error('an idle database connection failed:', error.message),
+  MIGRATION_BUDGETS,
+)
 
 try {
-  await migrate(database.db, { migrationsFolder })
+  await applyMigrations(database)
   console.log('migrations applied')
+} catch (error) {
+  // Without this the cause surfaces as an unhandled rejection, and a pool that fails to close
+  // afterwards would replace it — so a failed deploy would show the wrong error.
+  console.error('migrations failed:', error instanceof Error ? error.message : error)
+  process.exitCode = 1
 } finally {
-  await database.end()
+  await database.end().catch(() => undefined)
 }

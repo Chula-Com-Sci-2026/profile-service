@@ -38,6 +38,6 @@ EXPOSE 3000
 # Readiness, not liveness: an unhealthy container here means "do not send work", which is what
 # compose's depends_on asks. Uses Node's own fetch — alpine has no curl and does not need one.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 CMD \
-  node --eval "fetch('http://127.0.0.1:' + (process.env.PORT ?? 3000) + '/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+  node --eval "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 CMD ["node", "dist/index.js"]
