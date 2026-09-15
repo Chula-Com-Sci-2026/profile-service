@@ -183,15 +183,21 @@ Order is error handler outermost, then request context, then auth, then routes �
 
 Until here the service runs on a laptop. This phase makes it an artifact.
 
-- **Multi-stage `Dockerfile`** — a build stage running `npm ci` and `npm run build`, then a runtime stage on the same `node:24-alpine` minor with `npm ci --omit=dev` and only `dist/` copied across. No TypeScript, no test framework, no source in the shipped image
+- **Multi-stage `Dockerfile`** — a build stage running `npm ci` and `npm run build`, then a runtime stage on the same `node:24.21-alpine` with `npm ci --omit=dev`, carrying `dist/` and `drizzle/` and nothing else. Pinned to the minor, not floating: the image a teammate builds should be the image you built. Verified empty of `typescript`, `vitest`, `eslint`, `drizzle-kit`, `pino-pretty` and `ajv`
 - **`.dockerignore` first** — without one, `.env` enters the build context and can reach the image. That is a credential leak, not a size problem
 - Run as the image's own non-root `node` user
 - **`HEALTHCHECK` against `/ready`**, not `/health` — compose's `depends_on: service_healthy` gates whether to send work, which is a readiness question. `/health` stays the liveness signal for whatever restarts containers
 - The service joins `docker-compose.yml` beside Postgres, `depends_on` its healthcheck, so `docker compose up` is the whole demonstration
 - **SIGTERM is load-bearing.** Docker signals PID 1, and Node installs no default handler there, so phase 5's graceful shutdown is what stands between `docker stop` and ten seconds of hanging followed by SIGKILL mid-request
-- **Migrations are a separate one-shot run of the same image**, never automatic on boot — three replicas starting together would otherwise be three concurrent migrations against one schema. Same artifact, different command
+- **Migrations are a separate one-shot run of the same image**, never automatic on boot — three replicas starting together would otherwise be three concurrent migrations against one schema. Same artifact, different command: `node dist/migrate.js`. In compose it is a service gated on Postgres being healthy, with the service gated on it having completed, so `docker compose up` is one command
 
-**Done when** `docker compose up` brings up a healthy service against a healthy database, `docker stop` ends it without severing a request, and the image carries no development dependency.
+  `src/migrate.ts` uses drizzle-orm's migrator rather than the `drizzle-kit` CLI, because drizzle-kit is a devDependency and the runtime image is installed with `--omit=dev`. `npm run db:migrate` was switched to the same path, so the migration code that ships is the one every integration run exercises
+
+- **`stop_grace_period` must exceed `SHUTDOWN_DRAIN_MS` plus the close deadline**, or the container is killed mid-drain and the graceful shutdown is worse than none. Compose sets 20s against a 3s drain and a 10s deadline; the startup log prints the total because nothing inside the process can check the grace
+
+- **Compose does not seed.** `db:seed` truncates first, and a demo stack that quietly empties the table on `up` is a bad default. Seeding stays `npm run db:seed`, run deliberately
+
+**Done when** `docker compose up` brings up a healthy service against a healthy database, `docker stop` ends it without severing a request, and the image carries no development dependency — verified: migrate exits, the service reports healthy through the `/ready` HEALTHCHECK, it runs as uid 1000, `.env` is absent from the image, and `docker stop` takes the drain and no more.
 
 ### 7 — Avatar storage
 

@@ -12,3 +12,36 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  # Same image as the service, different command, run once and gone. Never on the service's
+  # boot: three replicas starting together would be three migrations against one schema.
+  migrate:
+    build: .
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://profile:profile@postgres:5432/profile
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  profile-service:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://profile:profile@postgres:5432/profile
+      # No Identity Service runs here, so /v1 answers 401 while /health and /ready work.
+      # The value only has to be present at startup; it is fetched when a token arrives.
+      IDENTITY_JWKS_URL: http://identity:4000/.well-known/jwks.json
+      IDENTITY_ISSUER: http://identity:4000
+      LOG_LEVEL: info
+      # /ready answers 503 for this long before the server stops accepting.
+      SHUTDOWN_DRAIN_MS: "3000"
+    # Must exceed SHUTDOWN_DRAIN_MS plus the close deadline, or the container is killed
+    # mid-drain and the graceful shutdown is worse than none. 3s + 10s, with room.
+    stop_grace_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
