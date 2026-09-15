@@ -18,11 +18,11 @@ const zone = (files, groups, message) => ({
 
 const FRAMEWORKS = ['hono', 'hono/*', '@hono/*', 'drizzle-orm', 'drizzle-orm/*', 'pg', 'zod']
 
-/** Auth and object storage are adapters too: `jose` belongs to interface/http, the S3 client to infrastructure. */
-const ADAPTERS = ['jose', '@aws-sdk/*']
+/** Adapters too: `jose` and `pino` belong to interface/http and the composition root, the S3 client to infrastructure. */
+const ADAPTERS = ['jose', 'pino', 'pino/*', '@aws-sdk/*']
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'drizzle/**'] },
+  { ignores: ['node_modules/**', 'drizzle/**', 'dist/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
 
