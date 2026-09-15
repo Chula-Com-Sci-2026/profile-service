@@ -19,8 +19,8 @@ export type ProfileFields = {
   pace?: Pace
   volume?: Volume
   experience?: Experience
-  preferredDistances: PreferredDistance[]
-  preferredRunTimes: PreferredRunTime[]
+  preferredDistances: readonly PreferredDistance[]
+  preferredRunTimes: readonly PreferredRunTime[]
 }
 
 /**
@@ -38,8 +38,8 @@ export type ProfileChanges = {
   pace?: Pace | null
   volume?: Volume | null
   experience?: Experience | null
-  preferredDistances?: PreferredDistance[]
-  preferredRunTimes?: PreferredRunTime[]
+  preferredDistances?: readonly PreferredDistance[]
+  preferredRunTimes?: readonly PreferredRunTime[]
 }
 
 /** Trim, then treat a value that is now empty as never given. Keeps "absent" the only unset state. */
@@ -49,13 +49,25 @@ function trimmed(value: string | undefined): string | undefined {
   return text.length > 0 ? text : undefined
 }
 
-/** Unique members, in declared order — a set, not a list. */
-function asSet<T extends { rank: number; equals(other: T): boolean }>(members: T[]): T[] {
+/**
+ * Unique members, in declared order — a set, not a list.
+ * Returns `readonly` rather than casting the freeze away: the field is frozen at runtime,
+ * so a caller reaching for `.sort()` or `.push()` should fail at compile time, not in production.
+ */
+function asSet<T extends { rank: number; equals(other: T): boolean }>(members: readonly T[]): readonly T[] {
   const unique: T[] = []
   for (const member of members) {
     if (!unique.some((seen) => seen.equals(member))) unique.push(member)
   }
-  return Object.freeze(unique.sort((a, b) => a.rank - b.rank)) as T[]
+  return Object.freeze(unique.sort((a, b) => a.rank - b.rank))
+}
+
+/**
+ * Characters as JSON Schema counts them — Unicode code points, not UTF-16 units.
+ * `'🏃'.length` is 2; openapi.yaml's `maxLength` counts it as 1, and the contract wins.
+ */
+function characters(text: string): number {
+  return [...text].length
 }
 
 /** The aggregate root — domain.md §3. One per runner, loaded and saved as one unit, immutable. */
@@ -63,8 +75,8 @@ export class Profile {
   readonly userId: string
   readonly displayName: string
   readonly birthYear: number
-  readonly preferredDistances: PreferredDistance[]
-  readonly preferredRunTimes: PreferredRunTime[]
+  readonly preferredDistances: readonly PreferredDistance[]
+  readonly preferredRunTimes: readonly PreferredRunTime[]
 
   // `declare` so TypeScript emits no field. A plain `readonly bio?: string` would define the
   // key with value undefined on every instance, and §3 says an unset scalar is *absent*.
@@ -78,18 +90,18 @@ export class Profile {
 
   constructor(fields: ProfileFields) {
     const userId = fields.userId.trim()
-    ensure(userId.length > 0, 'userId', 'must not be empty')
-    ensure(userId.length <= 64, 'userId', 'must be 64 characters or fewer')
+    ensure(characters(userId) > 0, 'userId', 'must not be empty')
+    ensure(characters(userId) <= 64, 'userId', 'must be 64 characters or fewer')
 
     const displayName = fields.displayName.trim()
-    ensure(displayName.length >= 1, 'displayName', 'must not be empty')
-    ensure(displayName.length <= 50, 'displayName', 'must be 50 characters or fewer')
+    ensure(characters(displayName) >= 1, 'displayName', 'must not be empty')
+    ensure(characters(displayName) <= 50, 'displayName', 'must be 50 characters or fewer')
 
     const bio = trimmed(fields.bio)
-    if (bio !== undefined) ensure(bio.length <= 500, 'bio', 'must be 500 characters or fewer')
+    if (bio !== undefined) ensure(characters(bio) <= 500, 'bio', 'must be 500 characters or fewer')
 
     const avatarRef = trimmed(fields.avatarRef)
-    if (avatarRef !== undefined) ensure(avatarRef.length <= 128, 'avatarRef', 'must be 128 characters or fewer')
+    if (avatarRef !== undefined) ensure(characters(avatarRef) <= 128, 'avatarRef', 'must be 128 characters or fewer')
 
     const thisYear = new Date().getFullYear()
     ensure(Number.isInteger(fields.birthYear), 'birthYear', 'must be a whole number')
@@ -137,8 +149,8 @@ export class Profile {
       userId: this.userId,
       displayName: changes.displayName ?? this.displayName,
       birthYear: changes.birthYear ?? this.birthYear,
-      preferredDistances: changes.preferredDistances ?? [...this.preferredDistances],
-      preferredRunTimes: changes.preferredRunTimes ?? [...this.preferredRunTimes],
+      preferredDistances: changes.preferredDistances ?? this.preferredDistances,
+      preferredRunTimes: changes.preferredRunTimes ?? this.preferredRunTimes,
       ...(bio !== undefined && { bio }),
       ...(avatarRef !== undefined && { avatarRef }),
       ...(gender !== undefined && { gender }),

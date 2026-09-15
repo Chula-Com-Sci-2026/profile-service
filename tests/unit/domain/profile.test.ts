@@ -46,6 +46,13 @@ describe('Profile — required fields', () => {
     expect(aProfile({ displayName: 'x'.repeat(50) }).displayName).toHaveLength(50)
   })
 
+  it('measures characters the way the contract does — code points, not UTF-16 units', () => {
+    const fiftyCodePoints = 'x'.repeat(49) + '🏃'
+    expect(fiftyCodePoints.length).toBe(51)
+    expect(aProfile({ displayName: fiftyCodePoints }).displayName).toBe(fiftyCodePoints)
+    expect(() => aProfile({ displayName: 'x'.repeat(50) + '🏃' })).toThrow(InvalidProfileFieldError)
+  })
+
   it('trims text before measuring it', () => {
     expect(aProfile({ displayName: '  Nok  ' }).displayName).toBe('Nok')
     expect(aProfile({ userId: ' 7f3a9c2e15 ' }).userId).toBe('7f3a9c2e15')
@@ -149,8 +156,11 @@ describe('Profile — immutability', () => {
     }).toThrow(TypeError)
   })
 
-  it('freezes its sets too', () => {
+  it('freezes its sets too — and the compiler says so first', () => {
     const profile = aProfile({ preferredDistances: [new PreferredDistance('5k')] })
-    expect(() => profile.preferredDistances.push(new PreferredDistance('10k'))).toThrow(TypeError)
+    expect(() =>
+      // @ts-expect-error a set is readonly: this must not compile, and must throw if it ever does
+      profile.preferredDistances.push(new PreferredDistance('10k')),
+    ).toThrow(TypeError)
   })
 })
