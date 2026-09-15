@@ -80,14 +80,20 @@ describe('round trip', () => {
     expect(found?.volume?.metresPerWeek).toBe(45_000)
   })
 
-  it('keeps sets in declared order, not the order they were given', async () => {
+  it('writes sets to the column already in declared order', async () => {
+    // Read the raw column, not the mapped Profile: toDomain rebuilds a Profile and its
+    // constructor re-sorts, so asserting through findById would pass whatever was stored.
     await repository.insert(aFullProfile())
-    const found = await repository.findById('7f3a9c2e15')
+    const result = await db.execute(
+      sql`SELECT preferred_distances, preferred_run_times FROM profiles WHERE user_id = '7f3a9c2e15'`,
+    )
+    const row = result.rows[0]
 
-    expect(found?.preferredDistances.map((d) => d.distance)).toEqual(['10k', 'marathon'])
-    expect(found?.preferredRunTimes.map((t) => `${t.dayOfWeek}/${t.timeOfDay}`)).toEqual([
-      'mon/evening',
-      'sat/early_morning',
+    expect(row).toBeDefined()
+    expect(row?.['preferred_distances']).toEqual(['10k', 'marathon'])
+    expect(row?.['preferred_run_times']).toEqual([
+      { dayOfWeek: 'mon', timeOfDay: 'evening' },
+      { dayOfWeek: 'sat', timeOfDay: 'early_morning' },
     ])
   })
 
@@ -161,6 +167,34 @@ describe('row to domain is a boundary', () => {
       VALUES ('2c9f5b7d10', 'Ploy', 1996, 'banana', '[]'::jsonb, '[]'::jsonb)
     `)
     await expect(repository.findById('2c9f5b7d10')).rejects.toThrow(InvalidProfileFieldError)
+  })
+
+  it.each([
+    ["'null'::jsonb", 'JSON null'],
+    ['\'"marathon"\'::jsonb', 'a bare string'],
+    ["'{}'::jsonb", 'an object'],
+  ])('rejects a set column holding %s — jsonb NOT NULL does not stop it', async (stored) => {
+    await db.execute(
+      sql.raw(`INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
+               VALUES ('shape', 'Ann', 1992, ${stored}, '[]'::jsonb)`),
+    )
+    await expect(repository.findById('shape')).rejects.toThrow(InvalidProfileFieldError)
+  })
+
+  it('rejects a set holding a member of the wrong type', async () => {
+    await db.execute(sql`
+      INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
+      VALUES ('member', 'Ann', 1992, '[42]'::jsonb, '[]'::jsonb)
+    `)
+    await expect(repository.findById('member')).rejects.toThrow(InvalidProfileFieldError)
+  })
+
+  it('rejects a run time missing half of its pair', async () => {
+    await db.execute(sql`
+      INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
+      VALUES ('pair', 'Ann', 1992, '[]'::jsonb, '[{"dayOfWeek":"mon"}]'::jsonb)
+    `)
+    await expect(repository.findById('pair')).rejects.toThrow(InvalidProfileFieldError)
   })
 
   it('rejects a stored value that is out of range', async () => {

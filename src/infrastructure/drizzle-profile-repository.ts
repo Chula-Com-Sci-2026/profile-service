@@ -14,8 +14,10 @@ const UNIQUE_VIOLATION = '23505'
  * so walk the cause chain for the SQLSTATE rather than assuming which layer carries it.
  */
 function isUniqueViolation(error: unknown): boolean {
+  const seen = new Set<unknown>()
   let current: unknown = error
-  while (current !== null && current !== undefined) {
+  while (current !== null && current !== undefined && !seen.has(current)) {
+    seen.add(current)
     if ((current as { code?: unknown }).code === UNIQUE_VIOLATION) return true
     current = (current as { cause?: unknown }).cause
   }

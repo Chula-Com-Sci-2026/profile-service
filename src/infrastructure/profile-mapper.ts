@@ -33,13 +33,46 @@ function asExperience(value: string): Experience {
   return value
 }
 
+/**
+ * `jsonb NOT NULL` rejects SQL NULL, not JSON `null` — `'null'::jsonb` and `'"marathon"'::jsonb`
+ * both satisfy the constraint, and `$type<string[]>()` is an unchecked assertion, so the column
+ * can hand back anything. Check the shape here, or a hand-written row leaves as a TypeError and
+ * the edge turns a bad row into a 500 instead of a 4xx.
+ */
+function asArray(value: unknown, field: string): unknown[] {
+  if (!Array.isArray(value)) throw new InvalidProfileFieldError(field, 'is not stored as an array')
+  return value
+}
+
+function asDistances(value: unknown): PreferredDistance[] {
+  return asArray(value, 'preferredDistances').map((member) => {
+    if (typeof member !== 'string') {
+      throw new InvalidProfileFieldError('preferredDistances', 'holds something that is not a distance')
+    }
+    return new PreferredDistance(member)
+  })
+}
+
+function asRunTimes(value: unknown): PreferredRunTime[] {
+  return asArray(value, 'preferredRunTimes').map((member) => {
+    if (typeof member !== 'object' || member === null) {
+      throw new InvalidProfileFieldError('preferredRunTimes', 'holds something that is not a day and a time')
+    }
+    const { dayOfWeek, timeOfDay } = member as { dayOfWeek?: unknown; timeOfDay?: unknown }
+    if (typeof dayOfWeek !== 'string' || typeof timeOfDay !== 'string') {
+      throw new InvalidProfileFieldError('preferredRunTimes', 'holds an entry missing its day or its time')
+    }
+    return new PreferredRunTime(dayOfWeek, timeOfDay)
+  })
+}
+
 export function toDomain(row: ProfileRow): Profile {
   return new Profile({
     userId: row.userId,
     displayName: row.displayName,
     birthYear: row.birthYear,
-    preferredDistances: row.preferredDistances.map((distance) => new PreferredDistance(distance)),
-    preferredRunTimes: row.preferredRunTimes.map((time) => new PreferredRunTime(time.dayOfWeek, time.timeOfDay)),
+    preferredDistances: asDistances(row.preferredDistances),
+    preferredRunTimes: asRunTimes(row.preferredRunTimes),
     ...(row.bio !== null && { bio: row.bio }),
     ...(row.avatarRef !== null && { avatarRef: row.avatarRef }),
     ...(row.gender !== null && { gender: asGender(row.gender) }),

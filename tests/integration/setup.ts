@@ -19,17 +19,28 @@ let container: StartedPostgreSqlContainer
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   container = await new PostgreSqlContainer(POSTGRES_IMAGE).start()
-  const databaseUrl = container.getConnectionUri()
-
-  // Migrate once, here — a suite that migrates per file races itself.
-  const pool = new pg.Pool({ connectionString: databaseUrl })
-  await migrate(drizzle(pool), { migrationsFolder: 'drizzle' })
-  await pool.end()
-
-  project.provide('databaseUrl', databaseUrl)
-
-  return async () => {
+  const stop = async (): Promise<void> => {
     await container.stop()
+  }
+
+  try {
+    const databaseUrl = container.getConnectionUri()
+
+    // Migrate once, here — a suite that migrates per file races itself.
+    const pool = new pg.Pool({ connectionString: databaseUrl })
+    try {
+      await migrate(drizzle(pool), { migrationsFolder: 'drizzle' })
+    } finally {
+      await pool.end()
+    }
+
+    project.provide('databaseUrl', databaseUrl)
+    return stop
+  } catch (error) {
+    // The teardown closure is only handed back on success, so stop the container ourselves
+    // rather than leaving one running for every failed migration.
+    await stop()
+    throw error
   }
 }
 
