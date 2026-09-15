@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { type Context, Hono } from 'hono'
 import type { Logger } from 'pino'
 import type { CreateProfile } from '../../application/create-profile.ts'
 import type { DeleteProfile } from '../../application/delete-profile.ts'
@@ -6,7 +6,8 @@ import type { GetProfile } from '../../application/get-profile.ts'
 import type { UpdateProfile } from '../../application/update-profile.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
 import type { Env } from './context.ts'
-import { errorHandler } from './error-handler.ts'
+import { errorHandler, notFoundHandler } from './error-handler.ts'
+import { MalformedBodyError } from './errors.ts'
 import { ownsTheProfile } from './ownership.ts'
 import { toChanges, toFields } from './profile-input.ts'
 import { toView } from './profile-view.ts'
@@ -29,6 +30,19 @@ export type AppOptions = {
 const PROFILE = '/v1/profiles/:userId'
 
 /**
+ * Parse failures are raised where they happen. Matching `instanceof SyntaxError` in the error
+ * handler would catch one thrown anywhere below the route — a driver, a dependency — and report
+ * a server fault as a malformed body, skipping the only line that logs it.
+ */
+async function jsonBody(c: Context<Env>): Promise<unknown> {
+  try {
+    return await c.req.json()
+  } catch {
+    throw new MalformedBodyError('the body is not valid JSON')
+  }
+}
+
+/**
  * Everything here comes from openapi.yaml.
  *
  * Order is error handler outermost, then request context, then auth, then routes — the only
@@ -39,14 +53,15 @@ const PROFILE = '/v1/profiles/:userId'
 export function createApp({ useCases, logger, authentication: auth }: AppOptions): Hono<Env> {
   const app = new Hono<Env>()
 
-  app.onError(errorHandler)
+  app.onError(errorHandler(logger))
+  app.notFound(notFoundHandler)
   app.use('*', requestContext(logger))
   app.use('/v1/*', authentication(auth))
 
   app.get('/health', (c) => c.json({ status: 'ok' }))
 
   app.put(PROFILE, ownsTheProfile(), async (c) => {
-    const body = profileWrite.parse(await c.req.json())
+    const body = profileWrite.parse(await jsonBody(c))
     const profile = await useCases.createProfile(toFields(c.req.param('userId'), body))
     return c.json(toView(profile), 201)
   })
@@ -56,7 +71,7 @@ export function createApp({ useCases, logger, authentication: auth }: AppOptions
   })
 
   app.patch(PROFILE, ownsTheProfile(), async (c) => {
-    const body = profilePatch.parse(await c.req.json())
+    const body = profilePatch.parse(await jsonBody(c))
     const profile = await useCases.updateProfile(c.req.param('userId'), toChanges(body))
     return c.json(toView(profile))
   })

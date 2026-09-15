@@ -10,7 +10,8 @@ export type AuthenticationOptions = {
   audience: string
 }
 
-const BEARER = /^Bearer (.+)$/
+// RFC 9110 §11.1: the auth scheme is case-insensitive, whatever a proxy does to it.
+const BEARER = /^Bearer (.+)$/i
 
 /**
  * Verifies Identity's JWT **locally** on every request — not trusted because a gateway
@@ -26,7 +27,15 @@ export function authentication({ jwks, issuer, audience }: AuthenticationOptions
 
     let subject: string | undefined
     try {
-      const { payload } = await jwtVerify(token, jwks, { issuer, audience })
+      const { payload } = await jwtVerify(token, jwks, {
+        issuer,
+        audience,
+        // Without this a token with no `exp` verifies forever, and this service has no
+        // revocation path. An allow-list of asymmetric algorithms is defence in depth:
+        // the JWKS `alg` already pins it, but nothing here should ever accept an HMAC.
+        requiredClaims: ['exp'],
+        algorithms: ['ES256', 'ES384', 'RS256', 'PS256', 'EdDSA'],
+      })
       subject = payload.sub
     } catch {
       // Why it failed — expired, wrong issuer, bad signature — is not the caller's business.

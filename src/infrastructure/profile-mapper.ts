@@ -51,7 +51,33 @@ function asRunTimes(value: unknown): PreferredRunTime[] {
   })
 }
 
+/**
+ * A stored row that breaks a §4 rule is a data problem, not a request problem.
+ *
+ * Without this it would surface as the same InvalidProfileFieldError a bad request body
+ * raises, and the edge would answer 422 — a client error, on a request the client cannot
+ * correct, on the one path that never logs. Unrecognised at the edge, it becomes a logged 500.
+ */
+export class CorruptProfileRowError extends Error {
+  readonly userId: string
+
+  constructor(userId: string, cause: unknown) {
+    super(`the stored profile for ${userId} does not satisfy its own rules`, { cause })
+    this.name = 'CorruptProfileRowError'
+    this.userId = userId
+  }
+}
+
 export function toDomain(row: ProfileRow): Profile {
+  try {
+    return buildProfile(row)
+  } catch (error) {
+    if (error instanceof InvalidProfileFieldError) throw new CorruptProfileRowError(row.userId, error)
+    throw error
+  }
+}
+
+function buildProfile(row: ProfileRow): Profile {
   return new Profile({
     userId: row.userId,
     displayName: row.displayName,

@@ -13,6 +13,8 @@ export type Identity = {
   audience: string
   tokenFor: (userId: string) => Promise<string>
   tokenSignedByAnother: (userId: string) => Promise<string>
+  /** Correctly signed, correct issuer and audience — and no `exp`, so it never expires. */
+  tokenWithoutExpiry: (userId: string) => Promise<string>
 }
 
 type PrivateKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
@@ -30,6 +32,15 @@ export async function anIdentity(): Promise<Identity> {
   const real = await keyPair()
   const impostor = await keyPair()
 
+  const unexpiring = (userId: string): Promise<string> =>
+    new SignJWT({})
+      .setProtectedHeader({ alg: 'ES256', kid: 'identity' })
+      .setSubject(userId)
+      .setIssuer(ISSUER)
+      .setAudience(AUDIENCE)
+      .setIssuedAt(Math.floor(new Date('2000-01-01').getTime() / 1000))
+      .sign(real.privateKey)
+
   const sign = (key: PrivateKey, userId: string): Promise<string> =>
     new SignJWT({})
       .setProtectedHeader({ alg: 'ES256', kid: 'identity' })
@@ -46,5 +57,6 @@ export async function anIdentity(): Promise<Identity> {
     audience: AUDIENCE,
     tokenFor: (userId) => sign(real.privateKey, userId),
     tokenSignedByAnother: (userId) => sign(impostor.privateKey, userId),
+    tokenWithoutExpiry: unexpiring,
   }
 }

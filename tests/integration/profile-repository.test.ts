@@ -9,6 +9,7 @@ import { PreferredRunTime } from '../../src/domain/preferred-run-time.ts'
 import { Profile } from '../../src/domain/profile.ts'
 import { Volume } from '../../src/domain/volume.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
+import { CorruptProfileRowError } from '../../src/infrastructure/profile-mapper.ts'
 
 let pool: pg.Pool
 let db: NodePgDatabase
@@ -160,13 +161,25 @@ describe('delete', () => {
 })
 
 describe('row to domain is a boundary', () => {
+  it('reports a corrupt row as our problem, keeping the field error as the cause', async () => {
+    await db.execute(sql`
+      INSERT INTO profiles (user_id, display_name, birth_year, gender, preferred_distances, preferred_run_times)
+      VALUES ('cause', 'Ann', 1992, 'banana', '[]'::jsonb, '[]'::jsonb)
+    `)
+    const error = await repository.findById('cause').catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(CorruptProfileRowError)
+    expect((error as CorruptProfileRowError).userId).toBe('cause')
+    expect((error as Error).cause).toBeInstanceOf(InvalidProfileFieldError)
+  })
+
   it('rejects a row the table was happy to store but §4 forbids', async () => {
     // The table enforces shape and the primary key. It has no opinion about gender.
     await db.execute(sql`
       INSERT INTO profiles (user_id, display_name, birth_year, gender, preferred_distances, preferred_run_times)
       VALUES ('2c9f5b7d10', 'Ploy', 1996, 'banana', '[]'::jsonb, '[]'::jsonb)
     `)
-    await expect(repository.findById('2c9f5b7d10')).rejects.toThrow(InvalidProfileFieldError)
+    await expect(repository.findById('2c9f5b7d10')).rejects.toThrow(CorruptProfileRowError)
   })
 
   it.each([
@@ -178,7 +191,7 @@ describe('row to domain is a boundary', () => {
       sql.raw(`INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
                VALUES ('shape', 'Ann', 1992, ${stored}, '[]'::jsonb)`),
     )
-    await expect(repository.findById('shape')).rejects.toThrow(InvalidProfileFieldError)
+    await expect(repository.findById('shape')).rejects.toThrow(CorruptProfileRowError)
   })
 
   it('rejects a set holding a member of the wrong type', async () => {
@@ -186,7 +199,7 @@ describe('row to domain is a boundary', () => {
       INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
       VALUES ('member', 'Ann', 1992, '[42]'::jsonb, '[]'::jsonb)
     `)
-    await expect(repository.findById('member')).rejects.toThrow(InvalidProfileFieldError)
+    await expect(repository.findById('member')).rejects.toThrow(CorruptProfileRowError)
   })
 
   it('rejects a run time missing half of its pair', async () => {
@@ -194,7 +207,7 @@ describe('row to domain is a boundary', () => {
       INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
       VALUES ('pair', 'Ann', 1992, '[]'::jsonb, '[{"dayOfWeek":"mon"}]'::jsonb)
     `)
-    await expect(repository.findById('pair')).rejects.toThrow(InvalidProfileFieldError)
+    await expect(repository.findById('pair')).rejects.toThrow(CorruptProfileRowError)
   })
 
   it('rejects a stored value that is out of range', async () => {
@@ -202,6 +215,6 @@ describe('row to domain is a boundary', () => {
       INSERT INTO profiles (user_id, display_name, birth_year, pace, preferred_distances, preferred_run_times)
       VALUES ('e86a1f4c92', 'Bank', 1988, 20, '[]'::jsonb, '[]'::jsonb)
     `)
-    await expect(repository.findById('e86a1f4c92')).rejects.toThrow(InvalidProfileFieldError)
+    await expect(repository.findById('e86a1f4c92')).rejects.toThrow(CorruptProfileRowError)
   })
 })

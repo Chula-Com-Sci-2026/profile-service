@@ -153,8 +153,13 @@ describe('GET /v1/profiles/{userId} — getProfile', () => {
 })
 
 describe('PATCH /v1/profiles/{userId} — updateProfile', () => {
+  // openapi.yaml declares the PATCH body under application/merge-patch+json and nothing else.
   const patch = (userId: string, body: unknown, as_ = userId): Promise<Response> =>
-    as(as_, `/v1/profiles/${userId}`, { method: 'PATCH', body: JSON.stringify(body) })
+    as(as_, `/v1/profiles/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/merge-patch+json' },
+    })
 
   it('200 changes a field', async () => {
     await givenAProfile(NOK, { ...minimal, bio: 'Chasing a sub-2 half.' })
@@ -311,6 +316,79 @@ describe('an unexpected failure', () => {
     // A 500 deliberately says nothing useful — no detail, and never the cause.
     expect(payload['detail']).toBeUndefined()
     expect(JSON.stringify(payload)).not.toContain('pool is on fire')
+  })
+})
+
+describe('the edges of authentication', () => {
+  it('accepts a lowercase scheme — RFC 9110 makes it case-insensitive', async () => {
+    await givenAProfile()
+    const token = await identity.tokenFor(NOK)
+    const response = await app.request(`/v1/profiles/${NOK}`, {
+      headers: { authorization: `bearer ${token}` },
+    })
+    await expectContract('getProfile', 200, response)
+  })
+
+  it('refuses a token with no expiry, however well signed', async () => {
+    const token = await identity.tokenWithoutExpiry(NOK)
+    const response = await app.request(`/v1/profiles/${NOK}`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+    await expectContract('getProfile', 401, response)
+  })
+})
+
+describe('sets are sets', () => {
+  it('400 rather than silently deduplicating what the client sent', async () => {
+    const response = await put(NOK, { ...minimal, preferredDistances: ['5k', '5k'] })
+    await expectContract('createProfile', 400, response)
+  })
+
+  it('400 for a repeated day and time', async () => {
+    const repeated = [
+      { dayOfWeek: 'mon', timeOfDay: 'evening' },
+      { dayOfWeek: 'mon', timeOfDay: 'evening' },
+    ]
+    await expectContract('createProfile', 400, await put(NOK, { ...minimal, preferredRunTimes: repeated }))
+  })
+})
+
+describe('an unmatched path', () => {
+  it('answers in problem+json like every other error', async () => {
+    const response = await as(NOK, '/v1/profiles')
+    expect(response.status).toBe(404)
+    expect(response.headers.get('content-type')).toContain('application/problem+json')
+    expect(await response.json()).toEqual({ title: 'Not found', status: 404 })
+  })
+})
+
+describe('a SyntaxError from below the route', () => {
+  it('is a 500, not a malformed body — the request had no body at all', async () => {
+    const parsedBadJson = createApp({
+      useCases: {
+        createProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
+        getProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
+        updateProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
+        deleteProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
+      },
+      logger: pino({ level: 'silent' }),
+      authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+    })
+    const token = await identity.tokenFor(NOK)
+    const response = await parsedBadJson.request(`/v1/profiles/${NOK}`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+    await expectContract('getProfile', 500, response)
+  })
+
+  it('still answers 400 when the body really is not JSON', async () => {
+    const token = await identity.tokenFor(NOK)
+    const response = await app.request(`/v1/profiles/${NOK}`, {
+      method: 'PUT',
+      body: '{ not json',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    })
+    await expectContract('createProfile', 400, response)
   })
 })
 

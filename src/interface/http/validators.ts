@@ -13,6 +13,29 @@ const runTime = z.strictObject({
   timeOfDay: z.string(),
 })
 
+/**
+ * `uniqueItems: true` in openapi.yaml. Without this the domain quietly deduplicates and the
+ * client gets a 201 describing a set it did not send — the server rewriting the request rather
+ * than rejecting it. Uniqueness is shape, so it is a 400.
+ */
+const noRepeats =
+  <T>(identify: (item: T) => string) =>
+  (items: T[]): boolean =>
+    new Set(items.map(identify)).size === items.length
+
+const distances = z
+  .array(z.string())
+  .refine(noRepeats((distance: string) => distance), 'must not repeat a distance')
+
+type RunTimeItem = z.infer<typeof runTime>
+
+const runTimes = z
+  .array(runTime)
+  .refine(
+    noRepeats((time: RunTimeItem) => `${time.dayOfWeek}/${time.timeOfDay}`),
+    'must not repeat a day and time',
+  )
+
 /** `ProfileWrite` in openapi.yaml — no `userId` in the body; it is the path parameter. */
 export const profileWrite = z.strictObject({
   displayName: z.string(),
@@ -24,8 +47,8 @@ export const profileWrite = z.strictObject({
   pace: z.number().optional(),
   volume: z.number().optional(),
   experience: z.string().optional(),
-  preferredDistances: z.array(z.string()).optional(),
-  preferredRunTimes: z.array(runTime).optional(),
+  preferredDistances: distances.optional(),
+  preferredRunTimes: runTimes.optional(),
 })
 
 /**
@@ -43,8 +66,8 @@ export const profilePatch = z.strictObject({
   pace: z.number().nullable().optional(),
   volume: z.number().nullable().optional(),
   experience: z.string().nullable().optional(),
-  preferredDistances: z.array(z.string()).optional(),
-  preferredRunTimes: z.array(runTime).optional(),
+  preferredDistances: distances.optional(),
+  preferredRunTimes: runTimes.optional(),
 })
 
 export type ProfileWriteBody = z.infer<typeof profileWrite>

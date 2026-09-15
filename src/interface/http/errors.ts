@@ -6,6 +6,14 @@
  * So these live here, and `domain/` stays unaware that callers exist.
  */
 
+/** The request body would not parse. Raised at the parse site, never inferred from a type. */
+export class MalformedBodyError extends Error {
+  constructor(detail: string) {
+    super(detail)
+    this.name = 'MalformedBodyError'
+  }
+}
+
 export class UnauthorizedError extends Error {
   constructor(detail: string) {
     super(detail)

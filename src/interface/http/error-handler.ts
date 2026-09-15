@@ -1,4 +1,5 @@
-import type { ErrorHandler } from 'hono'
+import type { ErrorHandler, NotFoundHandler } from 'hono'
+import type { Logger } from 'pino'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { ZodError } from 'zod'
 import {
@@ -7,7 +8,7 @@ import {
   ProfileNotFoundError,
 } from '../../domain/errors.ts'
 import type { Env } from './context.ts'
-import { ForbiddenError, UnauthorizedError } from './errors.ts'
+import { ForbiddenError, MalformedBodyError, UnauthorizedError } from './errors.ts'
 
 /** RFC 9457 problem details. `detail` is human prose — openapi.yaml says do not parse it. */
 type Problem = { title: string; status: ContentfulStatusCode; detail?: string }
@@ -29,8 +30,8 @@ function problemFor(error: Error): Problem | undefined {
   if (error instanceof ZodError) {
     return { title: 'Malformed request body', status: 400, detail: firstIssue(error) }
   }
-  if (error instanceof SyntaxError) {
-    return { title: 'Malformed request body', status: 400, detail: 'the body is not valid JSON' }
+  if (error instanceof MalformedBodyError) {
+    return { title: 'Malformed request body', status: 400, detail: error.message }
   }
   if (error instanceof UnauthorizedError) {
     return { title: 'Unauthorized', status: 401, detail: error.message }
@@ -50,13 +51,19 @@ function problemFor(error: Error): Problem | undefined {
   return undefined
 }
 
-export const errorHandler: ErrorHandler<Env> = (error, c) => {
+/**
+ * Takes the base logger because this is the one path that must never fail: `c.get('log')` is
+ * unset if anything throws before the request-context middleware runs, and an error handler
+ * that throws turns a logged 500 into a silent transport error.
+ */
+export function errorHandler(base: Logger): ErrorHandler<Env> {
+  return (error, c) => {
   const problem = problemFor(error)
 
   if (problem === undefined) {
     // A 500 deliberately tells the client nothing useful, so this line is the only record
     // that the failure happened at all.
-    c.get('log').error({ err: error }, 'unhandled error')
+    ;(c.get('log') ?? base).error({ err: error }, 'unhandled error')
     return c.body(JSON.stringify({ title: 'Internal server error', status: 500 }), 500, {
       'content-type': 'application/problem+json',
     })
@@ -65,4 +72,11 @@ export const errorHandler: ErrorHandler<Env> = (error, c) => {
   return c.body(JSON.stringify(problem), problem.status, {
     'content-type': 'application/problem+json',
   })
+  }
 }
+
+/** An unmatched path, in the same shape as every other error this service returns. */
+export const notFoundHandler: NotFoundHandler<Env> = (c) =>
+  c.body(JSON.stringify({ title: 'Not found', status: 404 }), 404, {
+    'content-type': 'application/problem+json',
+  })
