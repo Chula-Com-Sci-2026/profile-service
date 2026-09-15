@@ -59,6 +59,7 @@ against it on every run.
 ## Work on it
 
 ```bash
+docker compose stop profile-service               # it holds port 3000; you want it
 cp .env.example .env                              # the defaults match docker compose
 npm ci
 docker compose up -d postgres minio create-bucket
@@ -66,6 +67,9 @@ npm run db:migrate
 npm run db:seed                                   # five runners, four with avatars
 npm run dev                                       # restarts on save, readable logs
 ```
+
+Skip the first line if you never ran `docker compose up`. If you forget it, the service says
+`the server could not start` with `EADDRINUSE` — that is the container, not you.
 
 ## Commands
 
