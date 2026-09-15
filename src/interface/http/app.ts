@@ -3,7 +3,7 @@ import type { Logger } from 'pino'
 import type { CreateProfile } from '../../application/create-profile.ts'
 import type { DeleteProfile } from '../../application/delete-profile.ts'
 import type { GetProfile } from '../../application/get-profile.ts'
-import type { StartAvatarUpload } from '../../application/start-avatar-upload.ts'
+import type { CreateAvatarUpload } from '../../application/create-avatar-upload.ts'
 import type { UpdateProfile } from '../../application/update-profile.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
 import type { Env } from './context.ts'
@@ -20,7 +20,7 @@ export type UseCases = {
   getProfile: GetProfile
   updateProfile: UpdateProfile
   deleteProfile: DeleteProfile
-  startAvatarUpload: StartAvatarUpload
+  createAvatarUpload: CreateAvatarUpload
 }
 
 /**
@@ -100,10 +100,11 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
     return c.json(toView(profile))
   })
 
-  // Authorises an upload; it does not touch the profile. The runner PATCHes `avatarRef` once
-  // the upload succeeds, so a failed upload leaves nothing pointing at a missing object.
-  app.post(`${PROFILE}/avatar`, ownsTheProfile(), async (c) => {
-    return c.json(await useCases.startAvatarUpload(c.req.param('userId')), 201)
+  // The resource created here is the *permission*, not the avatar — which is why the path is
+  // avatar-uploads and why nothing here accepts image bytes. The runner PATCHes `avatarRef`
+  // once the upload succeeds, so a failed upload leaves nothing pointing at a missing object.
+  app.post(`${PROFILE}/avatar-uploads`, ownsTheProfile(), async (c) => {
+    return c.json(await useCases.createAvatarUpload(c.req.param('userId')), 201)
   })
 
   app.delete(PROFILE, ownsTheProfile(), async (c) => {

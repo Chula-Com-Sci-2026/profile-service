@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'v
 import { createProfile } from '../../src/application/create-profile.ts'
 import { deleteProfile } from '../../src/application/delete-profile.ts'
 import { getProfile } from '../../src/application/get-profile.ts'
-import { startAvatarUpload } from '../../src/application/start-avatar-upload.ts'
+import { createAvatarUpload } from '../../src/application/create-avatar-upload.ts'
 import { updateProfile } from '../../src/application/update-profile.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
 import { createApp } from '../../src/interface/http/app.ts'
@@ -49,7 +49,7 @@ beforeAll(async () => {
       getProfile: getProfile(repository),
       updateProfile: updateProfile(repository, storage, () => {}),
       deleteProfile: deleteProfile(repository, storage, () => {}),
-      startAvatarUpload: startAvatarUpload(repository, storage),
+      createAvatarUpload: createAvatarUpload(repository, storage),
     },
     logger: pino({ level: 'silent' }),
     authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
@@ -282,7 +282,7 @@ describe('GET /health', () => {
         getProfile: () => Promise.reject(new Error('database is down')),
         updateProfile: () => Promise.reject(new Error('database is down')),
         deleteProfile: () => Promise.reject(new Error('database is down')),
-        startAvatarUpload: () => Promise.reject(new Error('database is down')),
+        createAvatarUpload: () => Promise.reject(new Error('database is down')),
       },
       logger: pino({ level: 'silent' }),
       authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
@@ -321,7 +321,7 @@ describe('an unexpected failure', () => {
         getProfile: onFire,
         updateProfile: onFire,
         deleteProfile: onFire,
-        startAvatarUpload: onFire,
+        createAvatarUpload: onFire,
       },
       logger: pino({ level: 'silent' }),
       authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
@@ -334,10 +334,10 @@ describe('an unexpected failure', () => {
     ['createProfile', 'PUT', JSON.stringify(minimal)],
     ['updateProfile', 'PATCH', JSON.stringify({ displayName: 'Nok R.' })],
     ['deleteProfile', 'DELETE', undefined],
-    ['startAvatarUpload', 'POST', undefined],
+    ['createAvatarUpload', 'POST', undefined],
   ] as const)('%s becomes a 500 matching the default response', async (operationId, method, body) => {
     const token = await identity.tokenFor(NOK)
-    const path = operationId === 'startAvatarUpload' ? `/v1/profiles/${NOK}/avatar` : `/v1/profiles/${NOK}`
+    const path = operationId === 'createAvatarUpload' ? `/v1/profiles/${NOK}/avatar-uploads` : `/v1/profiles/${NOK}`
     const response = await brokenApp().request(path, {
       method,
       ...(body !== undefined && { body }),
@@ -403,7 +403,7 @@ describe('a SyntaxError from below the route', () => {
         getProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
         updateProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
         deleteProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
-        startAvatarUpload: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
+        createAvatarUpload: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
       },
       logger: pino({ level: 'silent' }),
       authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
@@ -450,7 +450,7 @@ describe('GET /ready', () => {
         getProfile: () => Promise.reject(new Error('unused')),
         updateProfile: () => Promise.reject(new Error('unused')),
         deleteProfile: () => Promise.reject(new Error('unused')),
-        startAvatarUpload: () => Promise.reject(new Error('unused')),
+        createAvatarUpload: () => Promise.reject(new Error('unused')),
       },
       logger: pino({ level: 'silent' }),
       authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
@@ -494,15 +494,15 @@ describe('GET /ready', () => {
   })
 })
 
-describe('POST /v1/profiles/{userId}/avatar — startAvatarUpload', () => {
+describe('POST /v1/profiles/{userId}/avatar-uploads — createAvatarUpload', () => {
   const ask = (userId: string, as_ = userId): Promise<Response> =>
-    as(as_, `/v1/profiles/${userId}/avatar`, { method: 'POST' })
+    as(as_, `/v1/profiles/${userId}/avatar-uploads`, { method: 'POST' })
 
   it('201 hands back somewhere to upload and the key it will occupy', async () => {
     await givenAProfile()
     const response = await ask(NOK)
     const body = (await response.clone().json()) as Record<string, unknown>
-    await expectContract('startAvatarUpload', 201, response)
+    await expectContract('createAvatarUpload', 201, response)
 
     expect(body['avatarRef']).toBe(`avatars/${NOK}/abc`)
     expect(String(body['uploadUrl'])).toContain('X-Amz-Signature')
@@ -519,19 +519,19 @@ describe('POST /v1/profiles/{userId}/avatar — startAvatarUpload', () => {
   it('401 without a token', async () => {
     await givenAProfile()
     await expectContract(
-      'startAvatarUpload',
+      'createAvatarUpload',
       401,
-      await app.request(`/v1/profiles/${NOK}/avatar`, { method: 'POST' }),
+      await app.request(`/v1/profiles/${NOK}/avatar-uploads`, { method: 'POST' }),
     )
   })
 
   it('403 when uploading to someone else\u2019s profile', async () => {
     await givenAProfile()
-    await expectContract('startAvatarUpload', 403, await ask(NOK, BEAM))
+    await expectContract('createAvatarUpload', 403, await ask(NOK, BEAM))
   })
 
   it('404 when there is no profile to attach one to', async () => {
-    await expectContract('startAvatarUpload', 404, await ask(BEAM))
+    await expectContract('createAvatarUpload', 404, await ask(BEAM))
   })
 })
 

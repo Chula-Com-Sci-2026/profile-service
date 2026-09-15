@@ -89,7 +89,7 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
         default: { $ref: '#/components/responses/Problem' }
 
-  /v1/profiles/{userId}/avatar:
+  /v1/profiles/{userId}/avatar-uploads:
     parameters:
       - name: userId
         in: path
@@ -97,11 +97,13 @@ paths:
         schema: { type: string, minLength: 1, maxLength: 64 }
 
     post:
-      operationId: startAvatarUpload
-      summary: Ask for permission to upload an avatar
+      operationId: createAvatarUpload
+      summary: Create an upload for a new avatar
       description: >-
-        Returns a short-lived URL the client PUTs the image to directly, and the key that upload
-        will occupy. The service never handles image bytes — it is an API, not a file server.
+        Creates an upload: a short-lived URL the client PUTs the image to directly, and the key
+        that upload will occupy. The resource is the *permission*, not the avatar — which is why
+        the path is `avatar-uploads` and why nothing here accepts image bytes. The service never
+        handles them; it is an API, not a file server.
 
         It does not change the profile. Once the upload succeeds, PATCH `avatarRef` with the key
         returned here; until then the profile is untouched, so a failed upload leaves nothing

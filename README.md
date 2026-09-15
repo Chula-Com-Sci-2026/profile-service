@@ -42,7 +42,7 @@ endpoints actually get driven, tokens and all.
 | `GET` | `/v1/profiles/{userId}` | read one |
 | `PATCH` | `/v1/profiles/{userId}` | change one — `null` clears a field |
 | `DELETE` | `/v1/profiles/{userId}` | delete one, permanently |
-| `POST` | `/v1/profiles/{userId}/avatar` | get a URL to upload an avatar to |
+| `POST` | `/v1/profiles/{userId}/avatar-uploads` | create an upload — returns a URL to PUT the image to |
 | `GET` | `/health` | is the process alive? |
 | `GET` | `/ready` | should traffic come here? |
 

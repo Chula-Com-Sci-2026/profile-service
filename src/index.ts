@@ -4,7 +4,7 @@ import { pino } from 'pino'
 import { createProfile } from './application/create-profile.ts'
 import { deleteProfile } from './application/delete-profile.ts'
 import { getProfile } from './application/get-profile.ts'
-import { startAvatarUpload } from './application/start-avatar-upload.ts'
+import { createAvatarUpload } from './application/create-avatar-upload.ts'
 import { updateProfile } from './application/update-profile.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
@@ -50,7 +50,7 @@ const app = createApp({
       // together, so this is logged and tolerated rather than retried into a hung delete.
       logger.error({ err: error, userId }, 'avatar objects orphaned after deleting a profile')
     }),
-    startAvatarUpload: startAvatarUpload(repository, avatars),
+    createAvatarUpload: createAvatarUpload(repository, avatars),
   },
   logger,
   authentication: {
