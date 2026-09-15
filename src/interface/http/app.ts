@@ -76,7 +76,10 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
   // the answer to "not right now" is to route elsewhere, not to restart.
   app.get('/ready', async (c) => {
     if (readiness.isDraining()) return c.json({ status: 'draining' }, 503)
-    return (await readiness.canServe()) ? c.json({ status: 'ready' }) : c.json({ status: 'unavailable' }, 503)
+    // openapi.yaml documents 200 and 503 for this operation and no default, so a probe that
+    // throws must not become a 500. The guarantee belongs here, not in whatever was injected.
+    const serving = await readiness.canServe().catch(() => false)
+    return serving ? c.json({ status: 'ready' }) : c.json({ status: 'unavailable' }, 503)
   })
 
   app.put(PROFILE, ownsTheProfile(), async (c) => {

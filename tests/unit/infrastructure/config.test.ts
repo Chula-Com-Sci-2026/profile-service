@@ -62,6 +62,25 @@ describe('loadConfig — values it refuses', () => {
   })
 })
 
+describe('loadConfig — one restart, not several', () => {
+  it('reports a present-but-wrong value alongside a missing one', () => {
+    const message = (() => {
+      try {
+        loadConfig({ DATABASE_URL: 'x', LOG_LEVEL: 'warning', PORT: '0', SHUTDOWN_DRAIN_MS: 'soon' })
+        return ''
+      } catch (error) {
+        return (error as Error).message
+      }
+    })()
+
+    expect(message).toContain('IDENTITY_JWKS_URL is required')
+    expect(message).toContain('IDENTITY_ISSUER is required')
+    expect(message).toContain('LOG_LEVEL must be one of')
+    expect(message).toContain('PORT must be a port number')
+    expect(message).toContain('SHUTDOWN_DRAIN_MS must be a whole number')
+  })
+})
+
 describe('loadDatabaseUrl', () => {
   it('asks for nothing else, so the seed is not refused over an Identity setting', () => {
     expect(loadDatabaseUrl({ DATABASE_URL: 'postgres://x' })).toBe('postgres://x')

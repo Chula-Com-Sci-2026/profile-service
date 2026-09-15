@@ -448,6 +448,19 @@ describe('GET /ready', () => {
     expect(body).toEqual({ status: 'draining' })
   })
 
+  it('503 rather than 500 when the probe itself throws', async () => {
+    // openapi.yaml documents 200 and 503 for this operation and no default, so the route has
+    // to hold that line whatever probe it is given.
+    const throwing = {
+      isDraining: () => false,
+      canServe: () => Promise.reject(new Error('the pool exploded')),
+    }
+    const response = await withReadiness(throwing).request('/ready')
+    const body = await response.clone().json()
+    await expectContract('readiness', 503, response)
+    expect(body).toEqual({ status: 'unavailable' })
+  })
+
   it('503 when the database is out of reach — unlike /health, which does not ask', async () => {
     const unreachable = { isDraining: () => false, canServe: () => Promise.resolve(false) }
     const response = await withReadiness(unreachable).request('/ready')

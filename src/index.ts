@@ -51,8 +51,20 @@ const app = createApp({
   readiness: { isDraining: () => draining, canServe: () => database.ping() },
 })
 
+/** How long the close may take once draining is over. The drain is budgeted separately. */
+const SHUTDOWN_DEADLINE_MS = 10_000
+
 const server = serve({ fetch: app.fetch, port: config.port }, ({ port }) => {
-  logger.info({ port, nodeEnv: config.nodeEnv }, 'profile-service listening')
+  // The shutdown budget is logged because the container's grace period has to exceed it —
+  // `docker stop -t` or terminationGracePeriodSeconds — and nothing in here can check that.
+  logger.info(
+    {
+      port,
+      nodeEnv: config.nodeEnv,
+      shutdownBudgetMs: config.shutdownDrainMs + SHUTDOWN_DEADLINE_MS,
+    },
+    'profile-service listening',
+  )
 })
 
 // A bind failure arrives as an event, not a throw. Without this the operator gets a stack
@@ -66,10 +78,14 @@ server.on('error', (error: Error) => {
  * Docker signals PID 1, and Node installs no default handler there, so without this
  * `docker stop` waits ten seconds and then kills the process mid-request.
  */
-const SHUTDOWN_DEADLINE_MS = 10_000
 
 async function shutdown(signal: string): Promise<void> {
-  if (draining) return
+  if (draining) {
+    // The drain is a multi-second window in which the default handler is already replaced, so
+    // without this a second Ctrl-C would do nothing and the operator would have no way out.
+    logger.warn({ signal }, 'already shutting down — exiting now')
+    process.exit(1)
+  }
 
   // First, so /ready answers 503 while the server is still accepting. Without a pause here the
   // 503 is unobservable — the socket closes in the same tick — and whatever routes traffic
@@ -88,6 +104,8 @@ async function shutdown(signal: string): Promise<void> {
   }, SHUTDOWN_DEADLINE_MS)
   deadline.unref()
 
+  // close() waits for connections to end; this evicts the idle keep-alive ones a load balancer
+  // is likely holding, which otherwise sit until keepAliveTimeout and can burn the deadline.
   server.close(() => {
     void database.end().then(
       () => process.exit(0),
@@ -97,6 +115,8 @@ async function shutdown(signal: string): Promise<void> {
       },
     )
   })
+  // Hono's ServerType covers HTTP/2 too, which has no such method — ask rather than assert.
+  if ('closeIdleConnections' in server) server.closeIdleConnections()
 }
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'))

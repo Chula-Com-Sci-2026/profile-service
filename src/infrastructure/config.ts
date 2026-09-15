@@ -40,20 +40,24 @@ function read(env: Environment, name: string): string {
   return (env[name] ?? '').trim()
 }
 
-function milliseconds(raw: string, name: string, fallback: number): number {
+// These collect rather than throw: a value that is present but wrong is a problem like any
+// other, and the point of this module is that you learn about all of them in one restart.
+function milliseconds(raw: string, name: string, fallback: number, problems: string[]): number {
   if (raw.length === 0) return fallback
   const parsed = Number(raw)
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > 60_000) {
-    throw new Error(`${name} must be a whole number of milliseconds from 0 to 60000, not ${JSON.stringify(raw)}`)
+    problems.push(`${name} must be a whole number of milliseconds from 0 to 60000, not ${JSON.stringify(raw)}`)
+    return fallback
   }
   return parsed
 }
 
-function port(raw: string): number {
+function port(raw: string, problems: string[]): number {
   if (raw.length === 0) return 3000
   const parsed = Number(raw)
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
-    throw new Error(`PORT must be a port number, not ${JSON.stringify(raw)}`)
+    problems.push(`PORT must be a port number, not ${JSON.stringify(raw)}`)
+    return 3000
   }
   return parsed
 }
@@ -78,16 +82,19 @@ export function loadConfig(env: Environment = process.env): Config {
     problems.push(`LOG_LEVEL must be one of ${LOG_LEVELS.join(', ')}, not ${JSON.stringify(logLevel)}`)
   }
 
+  const listenOn = port(read(env, 'PORT'), problems)
+  const drainFor = milliseconds(read(env, 'SHUTDOWN_DRAIN_MS'), 'SHUTDOWN_DRAIN_MS', 0, problems)
+
   if (problems.length > 0) {
     throw new Error(`configuration: ${problems.join('; ')}`)
   }
 
   return {
     nodeEnv: read(env, 'NODE_ENV') || 'development',
-    port: port(read(env, 'PORT')),
+    port: listenOn,
     logLevel,
     databaseUrl: read(env, 'DATABASE_URL'),
-    shutdownDrainMs: milliseconds(read(env, 'SHUTDOWN_DRAIN_MS'), 'SHUTDOWN_DRAIN_MS', 0),
+    shutdownDrainMs: drainFor,
     identity: {
       jwksUrl: read(env, 'IDENTITY_JWKS_URL'),
       issuer: read(env, 'IDENTITY_ISSUER'),
