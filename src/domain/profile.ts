@@ -1,0 +1,151 @@
+import { isArea, type Area } from './area.ts'
+import { ensure } from './errors.ts'
+import { isExperience, type Experience } from './experience.ts'
+import { isGender, type Gender } from './gender.ts'
+import { Pace } from './pace.ts'
+import { PreferredDistance } from './preferred-distance.ts'
+import { PreferredRunTime } from './preferred-run-time.ts'
+import { Volume } from './volume.ts'
+
+/** Everything a profile is made of — domain.md §3. An unset scalar is absent; an unset set is empty. */
+export type ProfileFields = {
+  userId: string
+  displayName: string
+  bio?: string
+  avatarRef?: string
+  birthYear: number
+  gender?: Gender
+  area?: Area
+  pace?: Pace
+  volume?: Volume
+  experience?: Experience
+  preferredDistances: PreferredDistance[]
+  preferredRunTimes: PreferredRunTime[]
+}
+
+/**
+ * A partial edit. An absent key leaves the field alone; `null` clears it.
+ * `displayName` and `birthYear` cannot be cleared — a profile cannot exist without them.
+ * A set is replaced by sending a new array, never by sending null.
+ */
+export type ProfileChanges = {
+  displayName?: string
+  birthYear?: number
+  bio?: string | null
+  avatarRef?: string | null
+  gender?: Gender | null
+  area?: Area | null
+  pace?: Pace | null
+  volume?: Volume | null
+  experience?: Experience | null
+  preferredDistances?: PreferredDistance[]
+  preferredRunTimes?: PreferredRunTime[]
+}
+
+/** Trim, then treat a value that is now empty as never given. Keeps "absent" the only unset state. */
+function trimmed(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const text = value.trim()
+  return text.length > 0 ? text : undefined
+}
+
+/** Unique members, in declared order — a set, not a list. */
+function asSet<T extends { rank: number; equals(other: T): boolean }>(members: T[]): T[] {
+  const unique: T[] = []
+  for (const member of members) {
+    if (!unique.some((seen) => seen.equals(member))) unique.push(member)
+  }
+  return Object.freeze(unique.sort((a, b) => a.rank - b.rank)) as T[]
+}
+
+/** The aggregate root — domain.md §3. One per runner, loaded and saved as one unit, immutable. */
+export class Profile {
+  readonly userId: string
+  readonly displayName: string
+  readonly birthYear: number
+  readonly preferredDistances: PreferredDistance[]
+  readonly preferredRunTimes: PreferredRunTime[]
+
+  // `declare` so TypeScript emits no field. A plain `readonly bio?: string` would define the
+  // key with value undefined on every instance, and §3 says an unset scalar is *absent*.
+  declare readonly bio?: string
+  declare readonly avatarRef?: string
+  declare readonly gender?: Gender
+  declare readonly area?: Area
+  declare readonly pace?: Pace
+  declare readonly volume?: Volume
+  declare readonly experience?: Experience
+
+  constructor(fields: ProfileFields) {
+    const userId = fields.userId.trim()
+    ensure(userId.length > 0, 'userId', 'must not be empty')
+    ensure(userId.length <= 64, 'userId', 'must be 64 characters or fewer')
+
+    const displayName = fields.displayName.trim()
+    ensure(displayName.length >= 1, 'displayName', 'must not be empty')
+    ensure(displayName.length <= 50, 'displayName', 'must be 50 characters or fewer')
+
+    const bio = trimmed(fields.bio)
+    if (bio !== undefined) ensure(bio.length <= 500, 'bio', 'must be 500 characters or fewer')
+
+    const avatarRef = trimmed(fields.avatarRef)
+    if (avatarRef !== undefined) ensure(avatarRef.length <= 128, 'avatarRef', 'must be 128 characters or fewer')
+
+    const thisYear = new Date().getFullYear()
+    ensure(Number.isInteger(fields.birthYear), 'birthYear', 'must be a whole number')
+    ensure(fields.birthYear >= 1900, 'birthYear', 'must not be earlier than 1900')
+    ensure(fields.birthYear <= thisYear, 'birthYear', `must not be later than ${thisYear}`)
+
+    // Value objects validate themselves; the unions cannot, so the root checks them.
+    if (fields.gender !== undefined) ensure(isGender(fields.gender), 'gender', 'is not a known value')
+    if (fields.area !== undefined) ensure(isArea(fields.area), 'area', 'is not a known value')
+    if (fields.experience !== undefined) ensure(isExperience(fields.experience), 'experience', 'is not a known value')
+
+    this.userId = userId
+    this.displayName = displayName
+    if (bio !== undefined) this.bio = bio
+    if (avatarRef !== undefined) this.avatarRef = avatarRef
+    this.birthYear = fields.birthYear
+    if (fields.gender !== undefined) this.gender = fields.gender
+    if (fields.area !== undefined) this.area = fields.area
+    if (fields.pace !== undefined) this.pace = fields.pace
+    if (fields.volume !== undefined) this.volume = fields.volume
+    if (fields.experience !== undefined) this.experience = fields.experience
+    this.preferredDistances = asSet(fields.preferredDistances)
+    this.preferredRunTimes = asSet(fields.preferredRunTimes)
+
+    Object.freeze(this)
+  }
+
+  /** Apply changes, returning a new Profile. `userId` never changes. */
+  update(changes: ProfileChanges): Profile {
+    const settle = <T>(change: T | null | undefined, current: T | undefined): T | undefined => {
+      if (change === null) return undefined
+      if (change !== undefined) return change
+      return current
+    }
+
+    const bio = settle(changes.bio, this.bio)
+    const avatarRef = settle(changes.avatarRef, this.avatarRef)
+    const gender = settle(changes.gender, this.gender)
+    const area = settle(changes.area, this.area)
+    const pace = settle(changes.pace, this.pace)
+    const volume = settle(changes.volume, this.volume)
+    const experience = settle(changes.experience, this.experience)
+
+    return new Profile({
+      userId: this.userId,
+      displayName: changes.displayName ?? this.displayName,
+      birthYear: changes.birthYear ?? this.birthYear,
+      preferredDistances: changes.preferredDistances ?? [...this.preferredDistances],
+      preferredRunTimes: changes.preferredRunTimes ?? [...this.preferredRunTimes],
+      ...(bio !== undefined && { bio }),
+      ...(avatarRef !== undefined && { avatarRef }),
+      ...(gender !== undefined && { gender }),
+      ...(area !== undefined && { area }),
+      ...(pace !== undefined && { pace }),
+      ...(volume !== undefined && { volume }),
+      ...(experience !== undefined && { experience }),
+    })
+  }
+}
