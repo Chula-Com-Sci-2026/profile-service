@@ -23,18 +23,29 @@ if (process.env['NODE_ENV'] === 'production') {
 const entries = JSON.parse(readFileSync(new URL('./seed.json', import.meta.url), 'utf8')) as unknown
 if (!Array.isArray(entries)) throw new Error('seed.json must hold an array of runners')
 
-const database = createDatabase(loadDatabaseUrl())
-const insert = createProfile(new DrizzleProfileRepository(database.db))
+const database = createDatabase(loadDatabaseUrl(), (error) => {
+  console.error('an idle database connection failed:', error.message)
+})
 
 try {
-  await database.db.execute(sql`TRUNCATE profiles`)
+  // One transaction: a runner that breaks a §4 rule leaves the table as it was, rather than
+  // emptied with whatever happened to insert before the bad one.
+  await database.db.transaction(async (tx) => {
+    await tx.execute(sql`TRUNCATE profiles`)
+    const insert = createProfile(new DrizzleProfileRepository(tx))
 
-  for (const entry of entries) {
-    const { userId, ...body } = entry as { userId?: unknown }
-    if (typeof userId !== 'string') throw new Error(`a runner in seed.json has no userId: ${JSON.stringify(entry)}`)
-    const profile = await insert(toFields(userId, profileWrite.parse(body)))
-    console.log(`seeded ${profile.userId}  ${profile.displayName}`)
-  }
+    for (const entry of entries) {
+      if (typeof entry !== 'object' || entry === null) {
+        throw new Error(`seed.json holds something that is not a runner: ${JSON.stringify(entry)}`)
+      }
+      const { userId, ...body } = entry as { userId?: unknown }
+      if (typeof userId !== 'string') {
+        throw new Error(`a runner in seed.json has no userId: ${JSON.stringify(entry)}`)
+      }
+      const profile = await insert(toFields(userId, profileWrite.parse(body)))
+      console.log(`seeded ${profile.userId}  ${profile.displayName}`)
+    }
+  })
 
   console.log(`\n${entries.length} runners seeded`)
 } finally {

@@ -28,22 +28,22 @@ export default tseslint.config(
 
   zone(
     ['src/domain/**/*.ts'],
-    ['**/application/**', '**/infrastructure/**', '**/interface/**', ...FRAMEWORKS, ...ADAPTERS],
+    ['**/application/**', '**/infrastructure/**', '**/interface/**', '**/scripts/**', ...FRAMEWORKS, ...ADAPTERS],
     'domain/ imports only other domain files and Node built-ins — no framework, no ORM, no HTTP.',
   ),
   zone(
     ['src/application/**/*.ts'],
-    ['**/infrastructure/**', '**/interface/**', ...FRAMEWORKS, ...ADAPTERS],
+    ['**/infrastructure/**', '**/interface/**', '**/scripts/**', ...FRAMEWORKS, ...ADAPTERS],
     'application/ depends on domain/ and its repository interface — never on infrastructure or HTTP.',
   ),
   zone(
     ['src/infrastructure/**/*.ts'],
-    ['**/application/**', '**/interface/**', 'hono', 'hono/*', '@hono/*', 'jose'],
+    ['**/application/**', '**/interface/**', '**/scripts/**', 'hono', 'hono/*', '@hono/*', 'jose'],
     'infrastructure/ implements domain interfaces — it does not know the application or HTTP exists.',
   ),
   zone(
     ['src/interface/**/*.ts'],
-    ['**/infrastructure/**', 'drizzle-orm', 'drizzle-orm/*', 'pg'],
+    ['**/infrastructure/**', '**/scripts/**', 'drizzle-orm', 'drizzle-orm/*', 'pg'],
     'interface/http/ talks to application/ and domain/ — never to the database directly.',
   ),
 )

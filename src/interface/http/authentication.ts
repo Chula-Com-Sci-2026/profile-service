@@ -1,5 +1,5 @@
 import { createMiddleware } from 'hono/factory'
-import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from 'jose'
+import { createRemoteJWKSet, errors, type JWTVerifyGetKey, jwtVerify } from 'jose'
 import type { Env } from './context.ts'
 import { UnauthorizedError } from './errors.ts'
 
@@ -12,6 +12,19 @@ export type AuthenticationOptions = {
 
 // RFC 9110 §11.1: the auth scheme is case-insensitive, whatever a proxy does to it.
 const BEARER = /^Bearer (.+)$/i
+
+/**
+ * Did verification fail because of the token, or because we could not reach Identity?
+ *
+ * Both end as 401 — the deferred question is whether the second should be a 503 — but only one
+ * of them is our fault, and without this an Identity restart answers 401 to every request and
+ * writes nothing at all to diagnose it.
+ */
+function identityIsUnreachable(error: unknown): boolean {
+  if (error instanceof errors.JWKSTimeout || error instanceof errors.JWKSNoMatchingKey) return true
+  // A network failure is not a JOSE error at all — it arrives from fetch.
+  return !(error instanceof errors.JOSEError)
+}
 
 /**
  * Verifies Identity's JWT **locally** on every request — not trusted because a gateway
@@ -37,7 +50,10 @@ export function authentication({ jwks, issuer, audience }: AuthenticationOptions
         algorithms: ['ES256', 'ES384', 'RS256', 'PS256', 'EdDSA'],
       })
       subject = payload.sub
-    } catch {
+    } catch (error) {
+      if (identityIsUnreachable(error)) {
+        c.get('log').error({ err: error }, 'could not verify the token against Identity')
+      }
       // Why it failed — expired, wrong issuer, bad signature — is not the caller's business.
       throw new UnauthorizedError('the token did not verify')
     }

@@ -25,7 +25,10 @@ const logger = pino({
   redact: ['req.headers.authorization', 'headers.authorization', 'authorization'],
 })
 
-const database = createDatabase(config.databaseUrl)
+const database = createDatabase(config.databaseUrl, (error) => {
+  // An idle connection failing is not a request failing — log it and let the pool recover.
+  logger.error({ err: error }, 'an idle database connection failed')
+})
 const repository = new DrizzleProfileRepository(database.db)
 
 const app = createApp({
@@ -45,6 +48,13 @@ const app = createApp({
 
 const server = serve({ fetch: app.fetch, port: config.port }, ({ port }) => {
   logger.info({ port, nodeEnv: config.nodeEnv }, 'profile-service listening')
+})
+
+// A bind failure arrives as an event, not a throw. Without this the operator gets a stack
+// trace where loadConfig would have given them a sentence.
+server.on('error', (error: Error) => {
+  logger.error({ err: error, port: config.port }, 'the server could not start')
+  process.exit(1)
 })
 
 /**

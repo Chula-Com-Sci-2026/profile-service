@@ -25,6 +25,9 @@ const AUDIENCE = 'profile-service'
 
 const REQUIRED = ['DATABASE_URL', 'IDENTITY_JWKS_URL', 'IDENTITY_ISSUER'] as const
 
+/** pino's levels. Checked here so a typo fails with the rest, not later inside pino. */
+const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const
+
 type Environment = Record<string, string | undefined>
 
 function read(env: Environment, name: string): string {
@@ -51,15 +54,23 @@ export function loadDatabaseUrl(env: Environment = process.env): string {
 }
 
 export function loadConfig(env: Environment = process.env): Config {
-  const missing = REQUIRED.filter((name) => read(env, name).length === 0)
-  if (missing.length > 0) {
-    throw new Error(`missing required configuration: ${missing.join(', ')}`)
+  const problems = REQUIRED.filter((name) => read(env, name).length === 0).map(
+    (name) => `${name} is required`,
+  )
+
+  const logLevel = read(env, 'LOG_LEVEL') || 'info'
+  if (!(LOG_LEVELS as readonly string[]).includes(logLevel)) {
+    problems.push(`LOG_LEVEL must be one of ${LOG_LEVELS.join(', ')}, not ${JSON.stringify(logLevel)}`)
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`configuration: ${problems.join('; ')}`)
   }
 
   return {
     nodeEnv: read(env, 'NODE_ENV') || 'development',
     port: port(read(env, 'PORT')),
-    logLevel: read(env, 'LOG_LEVEL') || 'info',
+    logLevel,
     databaseUrl: read(env, 'DATABASE_URL'),
     identity: {
       jwksUrl: read(env, 'IDENTITY_JWKS_URL'),

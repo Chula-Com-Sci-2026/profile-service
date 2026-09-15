@@ -14,7 +14,20 @@ export type Database = {
   end: () => Promise<void>
 }
 
-export function createDatabase(connectionString: string): Database {
+/**
+ * `onIdleError` is not optional, and not a nicety.
+ *
+ * A pooled connection sitting idle can fail on its own — Postgres restarts, a proxy drops it,
+ * a keepalive reaper collects it — and `pg.Pool` reports that by emitting `error`. `Pool` is an
+ * EventEmitter, so an `error` event with no listener is rethrown as an uncaught exception and
+ * takes the process with it, with no request in flight and a pool that would have reconnected
+ * on the next checkout. A callback rather than a logger keeps `pino` out of this layer.
+ */
+export function createDatabase(
+  connectionString: string,
+  onIdleError: (error: Error) => void,
+): Database {
   const pool = new pg.Pool({ connectionString })
+  pool.on('error', onIdleError)
   return { db: drizzle(pool), end: () => pool.end() }
 }
