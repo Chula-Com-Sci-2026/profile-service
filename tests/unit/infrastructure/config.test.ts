@@ -7,7 +7,7 @@ const complete = {
   IDENTITY_ISSUER: 'http://localhost:4000',
   OBJECT_STORAGE_ENDPOINT: 'http://minio:9000',
   OBJECT_STORAGE_PUBLIC_ENDPOINT: 'http://localhost:9000',
-  OBJECT_STORAGE_BUCKET: 'avatars',
+  OBJECT_STORAGE_BUCKET: 'profile-service',
   OBJECT_STORAGE_ACCESS_KEY: 'minioadmin',
   OBJECT_STORAGE_SECRET_KEY: 'minioadmin',
 }

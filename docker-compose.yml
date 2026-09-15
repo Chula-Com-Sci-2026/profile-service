@@ -35,6 +35,10 @@ services:
   # Provisioning, not application logic: the bucket exists before the service needs it, and it
   # is readable anonymously because an avatar is a picture a runner chose to show other runners.
   # Keys carry a uuid, so the URL is unguessable even though the bucket is open.
+  #
+  # Named for the service, not for what is in it. Keys are `avatars/{userId}/{uuid}`, and a
+  # bucket also called `avatars` makes every path-style URL read /avatars/avatars/… — and
+  # leaves nowhere to put anything this service might store later.
   create-bucket:
     image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
@@ -45,8 +49,8 @@ services:
       - -c
       - |
         mc alias set store http://minio:9000 minioadmin minioadmin
-        mc mb --ignore-existing store/avatars
-        mc anonymous set download store/avatars
+        mc mb --ignore-existing store/profile-service
+        mc anonymous set download store/profile-service
 
   # Same image as the service, different command, run once and gone. Never on the service's
   # boot: three replicas starting together would be three migrations against one schema.
@@ -78,7 +82,7 @@ services:
       # service reaches MinIO and the other is how a browser does.
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_PUBLIC_ENDPOINT: http://localhost:9000
-      OBJECT_STORAGE_BUCKET: avatars
+      OBJECT_STORAGE_BUCKET: profile-service
       OBJECT_STORAGE_ACCESS_KEY: minioadmin
       OBJECT_STORAGE_SECRET_KEY: minioadmin
     # Must exceed SHUTDOWN_DRAIN_MS plus the close deadline, or the container is killed
