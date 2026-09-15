@@ -71,6 +71,15 @@ npm run dev                                       # restarts on save, readable l
 Skip the first line if you never ran `docker compose up`. If you forget it, the service says
 `the server could not start` with `EADDRINUSE` — that is the container, not you.
 
+It happens in reverse too, and that one is nastier. Leave `npm run dev` running and
+`docker compose up` cannot bind port 3000. It says so at the time — but the container it leaves
+behind is attached to no network, and starting it again looks fine while `localhost:3000` stays
+dead and the container goes `unhealthy`. Repair it with:
+
+```bash
+docker compose up -d --force-recreate profile-service
+```
+
 ## Commands
 
 | | |
