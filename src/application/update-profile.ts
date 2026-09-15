@@ -18,7 +18,10 @@ export function updateProfile(repository: ProfileRepository): UpdateProfile {
     if (current === null) throw new ProfileNotFoundError(userId)
 
     const next = current.update(changes)
-    // The profile could have been deleted between the read and the write.
+    // Covers one race only: the profile deleted between the read and the write. It does not
+    // cover two concurrent changes — both read the same profile, both write every column, and
+    // the later write reverts the earlier one. See "Concurrent updates to one profile" under
+    // Deferred on purpose in build_plan.md.
     if (!(await repository.update(next))) throw new ProfileNotFoundError(userId)
     return next
   }

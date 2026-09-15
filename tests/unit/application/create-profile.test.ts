@@ -11,7 +11,9 @@ describe('createProfile', () => {
     const profile = await createProfile(repository)(fieldsFor())
 
     expect(profile.userId).toBe('7f3a9c2e15')
-    expect(await repository.findById('7f3a9c2e15')).toBe(profile)
+    // toEqual, not toBe: the Drizzle repository rebuilds the Profile through toDomain, so
+    // reference identity is something only the in-memory fake would give us.
+    expect(await repository.findById('7f3a9c2e15')).toEqual(profile)
   })
 
   it('raises the domain error when a runner already has one', async () => {
