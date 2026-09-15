@@ -96,6 +96,8 @@ Profile (root)
 | `preferredDistances` | A set of `5k` · `10k` · `half_marathon` · `marathon`. |
 | `preferredRunTimes` | A set of pairs — a day `mon` · `tue` · `wed` · `thu` · `fri` · `sat` · `sun`, plus a time of day (below). |
 
+Character counts are Unicode code points: an emoji counts as one character, not two.
+
 ### Times of day
 
 All times are Bangkok local time (UTC+7).
