@@ -94,7 +94,7 @@ Two configs, because type-checking and emitting want different inputs. `tsconfig
 
 `moduleResolution` is `nodenext` rather than `Bundler`, which is what makes the import convention enforceable — see **Imports**. `erasableSyntaxOnly` keeps the source to syntax Node can strip unaided — no `enum`, no parameter properties — which the `as const` unions of phase 1 satisfy anyway, and which is what keeps `node src/index.ts` working with no build at all.
 
-**Done when** `npm run typecheck`, `npm run lint` and `npm test` pass with zero source files, and `npm run build` turns a `src/index.ts` into a `dist/index.js` that `node` runs.
+**Done when** `npm run typecheck`, `npm run lint` and `npm test` pass with zero source files. `npm run build` reports `TS18003: No inputs were found` until phase 1 writes the first file — that is correct, not a broken scaffold — and from then on it must produce a `dist/` that `node` runs.
 
 ### 1 — Domain
 
