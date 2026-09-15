@@ -1,7 +1,7 @@
-import { isArea, type Area } from '../domain/area.ts'
+import { toArea } from '../domain/area.ts'
 import { InvalidProfileFieldError } from '../domain/errors.ts'
-import { isExperience, type Experience } from '../domain/experience.ts'
-import { isGender, type Gender } from '../domain/gender.ts'
+import { toExperience } from '../domain/experience.ts'
+import { toGender } from '../domain/gender.ts'
 import { Pace } from '../domain/pace.ts'
 import { PreferredDistance } from '../domain/preferred-distance.ts'
 import { PreferredRunTime } from '../domain/preferred-run-time.ts'
@@ -17,21 +17,6 @@ import type { ProfileInsert, ProfileRow } from './schema.ts'
  * a stranger. A row written by an older version of this code, or by hand, fails here rather
  * than becoming a Profile that breaks its own rules.
  */
-
-function asGender(value: string): Gender {
-  if (!isGender(value)) throw new InvalidProfileFieldError('gender', 'is not a known value')
-  return value
-}
-
-function asArea(value: string): Area {
-  if (!isArea(value)) throw new InvalidProfileFieldError('area', 'is not a known value')
-  return value
-}
-
-function asExperience(value: string): Experience {
-  if (!isExperience(value)) throw new InvalidProfileFieldError('experience', 'is not a known value')
-  return value
-}
 
 /**
  * `jsonb NOT NULL` rejects SQL NULL, not JSON `null` — `'null'::jsonb` and `'"marathon"'::jsonb`
@@ -75,11 +60,11 @@ export function toDomain(row: ProfileRow): Profile {
     preferredRunTimes: asRunTimes(row.preferredRunTimes),
     ...(row.bio !== null && { bio: row.bio }),
     ...(row.avatarRef !== null && { avatarRef: row.avatarRef }),
-    ...(row.gender !== null && { gender: asGender(row.gender) }),
-    ...(row.area !== null && { area: asArea(row.area) }),
+    ...(row.gender !== null && { gender: toGender(row.gender) }),
+    ...(row.area !== null && { area: toArea(row.area) }),
     ...(row.pace !== null && { pace: new Pace(row.pace) }),
     ...(row.volume !== null && { volume: new Volume(row.volume) }),
-    ...(row.experience !== null && { experience: asExperience(row.experience) }),
+    ...(row.experience !== null && { experience: toExperience(row.experience) }),
   })
 }
 

@@ -1,0 +1,70 @@
+import { Hono } from 'hono'
+import type { Logger } from 'pino'
+import type { CreateProfile } from '../../application/create-profile.ts'
+import type { DeleteProfile } from '../../application/delete-profile.ts'
+import type { GetProfile } from '../../application/get-profile.ts'
+import type { UpdateProfile } from '../../application/update-profile.ts'
+import { authentication, type AuthenticationOptions } from './authentication.ts'
+import type { Env } from './context.ts'
+import { errorHandler } from './error-handler.ts'
+import { ownsTheProfile } from './ownership.ts'
+import { toChanges, toFields } from './profile-input.ts'
+import { toView } from './profile-view.ts'
+import { requestContext } from './request-context.ts'
+import { profilePatch, profileWrite } from './validators.ts'
+
+export type UseCases = {
+  createProfile: CreateProfile
+  getProfile: GetProfile
+  updateProfile: UpdateProfile
+  deleteProfile: DeleteProfile
+}
+
+export type AppOptions = {
+  useCases: UseCases
+  logger: Logger
+  authentication: AuthenticationOptions
+}
+
+const PROFILE = '/v1/profiles/:userId'
+
+/**
+ * Everything here comes from openapi.yaml.
+ *
+ * Order is error handler outermost, then request context, then auth, then routes — the only
+ * arrangement in which the error handler can catch what the others throw. Auth is mounted on
+ * `/v1/*`, not globally, so `/health` never reaches it: that mirrors the contract, where
+ * `/health` is the one operation carrying `security: []`.
+ */
+export function createApp({ useCases, logger, authentication: auth }: AppOptions): Hono<Env> {
+  const app = new Hono<Env>()
+
+  app.onError(errorHandler)
+  app.use('*', requestContext(logger))
+  app.use('/v1/*', authentication(auth))
+
+  app.get('/health', (c) => c.json({ status: 'ok' }))
+
+  app.put(PROFILE, ownsTheProfile(), async (c) => {
+    const body = profileWrite.parse(await c.req.json())
+    const profile = await useCases.createProfile(toFields(c.req.param('userId'), body))
+    return c.json(toView(profile), 201)
+  })
+
+  app.get(PROFILE, async (c) => {
+    return c.json(toView(await useCases.getProfile(c.req.param('userId'))))
+  })
+
+  app.patch(PROFILE, ownsTheProfile(), async (c) => {
+    const body = profilePatch.parse(await c.req.json())
+    const profile = await useCases.updateProfile(c.req.param('userId'), toChanges(body))
+    return c.json(toView(profile))
+  })
+
+  app.delete(PROFILE, ownsTheProfile(), async (c) => {
+    await useCases.deleteProfile(c.req.param('userId'))
+    return c.body(null, 204)
+  })
+
+  return app
+}
