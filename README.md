@@ -34,6 +34,28 @@ can check, and only Identity can sign. To exercise the API you need Identity run
 `IDENTITY_JWKS_URL` pointing at it. Until then, `npm run test:int` is where the profile
 endpoints actually get driven, tokens and all.
 
+## What it does
+
+| | | |
+|---|---|---|
+| `PUT` | `/v1/profiles/{userId}` | create a profile — 409 if the runner already has one |
+| `GET` | `/v1/profiles/{userId}` | read one |
+| `PATCH` | `/v1/profiles/{userId}` | change one — `null` clears a field |
+| `DELETE` | `/v1/profiles/{userId}` | delete one, permanently |
+| `POST` | `/v1/profiles/{userId}/avatar` | get a URL to upload an avatar to |
+| `GET` | `/health` | is the process alive? |
+| `GET` | `/ready` | should traffic come here? |
+
+Everything under `/v1` needs a bearer token from Identity, and you may only *change* your own
+profile — reading anyone's is allowed. `/health` and `/ready` need no token.
+
+There is no way to list or search profiles. That is deliberate, and
+[docs/domain.md](docs/domain.md) §1 explains what it is waiting on.
+
+For statuses, request and response shapes, and the avatar handshake, read
+[docs/openapi.yaml](docs/openapi.yaml) — it is the contract, and the tests check the code
+against it on every run.
+
 ## Work on it
 
 ```bash
