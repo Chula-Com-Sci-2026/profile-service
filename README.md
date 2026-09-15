@@ -58,8 +58,10 @@ against it on every run.
 
 ## Work on it
 
+The service runs from source; PostgreSQL and MinIO stay in Docker.
+
 ```bash
-docker compose stop profile-service               # it holds port 3000; you want it
+docker compose stop profile-service               # port 3000 has one owner — see below
 cp .env.example .env                              # the defaults match docker compose
 npm ci
 docker compose up -d postgres minio create-bucket
@@ -68,13 +70,18 @@ npm run db:seed                                   # five runners, four with avat
 npm run dev                                       # restarts on save, readable logs
 ```
 
-Skip the first line if you never ran `docker compose up`. If you forget it, the service says
-`the server could not start` with `EADDRINUSE` — that is the container, not you.
+Run that once. After it, `npm run dev` on its own is the whole loop.
 
-It happens in reverse too, and that one is nastier. Leave `npm run dev` running and
-`docker compose up` cannot bind port 3000. It says so at the time — but the container it leaves
-behind is attached to no network, and starting it again looks fine while `localhost:3000` stays
-dead and the container goes `unhealthy`. Repair it with:
+**Port 3000 has one owner.** `docker compose up` runs this service in a container on port 3000,
+and `npm run dev` runs the same service on your machine on the same port. Stop one before you
+start the other — that is all the first line above is doing, and it is harmless if there was
+nothing to stop. Forget it and `npm run dev` exits with `EADDRINUSE`; that is the container
+talking, not your code.
+
+Going the other way is worth knowing about, because Docker hides it. If `npm run dev` holds the
+port when you run `docker compose up`, the container cannot bind it and is left attached to no
+network — after which it will start again without complaint while `localhost:3000` answers
+nothing and the container sits there `unhealthy`. Stop `npm run dev` and build it fresh:
 
 ```bash
 docker compose up -d --force-recreate profile-service
