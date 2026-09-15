@@ -20,6 +20,8 @@
     "db:seed": "node --env-file-if-exists=.env scripts/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1132.0",
+    "@aws-sdk/s3-request-presigner": "^3.1132.0",
     "@hono/node-server": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.7",

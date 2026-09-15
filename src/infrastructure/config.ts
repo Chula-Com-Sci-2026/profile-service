@@ -24,12 +24,29 @@ export type Config = {
     issuer: string
     audience: string
   }
+  objectStorage: {
+    endpoint: string
+    publicEndpoint: string
+    bucket: string
+    accessKeyId: string
+    secretAccessKey: string
+    uploadExpiresInSeconds: number
+  }
 }
 
 /** This service's own name, not a setting — a token is for us or it is for someone else. */
 const AUDIENCE = 'profile-service'
 
-const REQUIRED = ['DATABASE_URL', 'IDENTITY_JWKS_URL', 'IDENTITY_ISSUER'] as const
+const REQUIRED = [
+  'DATABASE_URL',
+  'IDENTITY_JWKS_URL',
+  'IDENTITY_ISSUER',
+  'OBJECT_STORAGE_ENDPOINT',
+  'OBJECT_STORAGE_PUBLIC_ENDPOINT',
+  'OBJECT_STORAGE_BUCKET',
+  'OBJECT_STORAGE_ACCESS_KEY',
+  'OBJECT_STORAGE_SECRET_KEY',
+] as const
 
 /** pino's levels. Checked here so a typo fails with the rest, not later inside pino. */
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const
@@ -48,6 +65,19 @@ function milliseconds(raw: string, name: string, fallback: number, problems: str
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > 60_000) {
     problems.push(`${name} must be a whole number of milliseconds from 0 to 60000, not ${JSON.stringify(raw)}`)
     return fallback
+  }
+  return parsed
+}
+
+/** How long a presigned upload URL stays valid. Long enough to upload, short enough to matter. */
+function seconds(raw: string, problems: string[]): number {
+  if (raw.length === 0) return 300
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 3_600) {
+    problems.push(
+      `OBJECT_STORAGE_UPLOAD_EXPIRES_SECONDS must be a whole number of seconds from 1 to 3600, not ${JSON.stringify(raw)}`,
+    )
+    return 300
   }
   return parsed
 }
@@ -84,6 +114,7 @@ export function loadConfig(env: Environment = process.env): Config {
 
   const listenOn = port(read(env, 'PORT'), problems)
   const drainFor = milliseconds(read(env, 'SHUTDOWN_DRAIN_MS'), 'SHUTDOWN_DRAIN_MS', 0, problems)
+  const uploadWindow = seconds(read(env, 'OBJECT_STORAGE_UPLOAD_EXPIRES_SECONDS'), problems)
 
   if (problems.length > 0) {
     throw new Error(`configuration: ${problems.join('; ')}`)
@@ -99,6 +130,14 @@ export function loadConfig(env: Environment = process.env): Config {
       jwksUrl: read(env, 'IDENTITY_JWKS_URL'),
       issuer: read(env, 'IDENTITY_ISSUER'),
       audience: AUDIENCE,
+    },
+    objectStorage: {
+      endpoint: read(env, 'OBJECT_STORAGE_ENDPOINT'),
+      publicEndpoint: read(env, 'OBJECT_STORAGE_PUBLIC_ENDPOINT'),
+      bucket: read(env, 'OBJECT_STORAGE_BUCKET'),
+      accessKeyId: read(env, 'OBJECT_STORAGE_ACCESS_KEY'),
+      secretAccessKey: read(env, 'OBJECT_STORAGE_SECRET_KEY'),
+      uploadExpiresInSeconds: uploadWindow,
     },
   }
 }

@@ -3,6 +3,7 @@ import type { Logger } from 'pino'
 import type { CreateProfile } from '../../application/create-profile.ts'
 import type { DeleteProfile } from '../../application/delete-profile.ts'
 import type { GetProfile } from '../../application/get-profile.ts'
+import type { StartAvatarUpload } from '../../application/start-avatar-upload.ts'
 import type { UpdateProfile } from '../../application/update-profile.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
 import type { Env } from './context.ts'
@@ -19,6 +20,7 @@ export type UseCases = {
   getProfile: GetProfile
   updateProfile: UpdateProfile
   deleteProfile: DeleteProfile
+  startAvatarUpload: StartAvatarUpload
 }
 
 /**
@@ -96,6 +98,12 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
     const body = profilePatch.parse(await jsonBody(c))
     const profile = await useCases.updateProfile(c.req.param('userId'), toChanges(body))
     return c.json(toView(profile))
+  })
+
+  // Authorises an upload; it does not touch the profile. The runner PATCHes `avatarRef` once
+  // the upload succeeds, so a failed upload leaves nothing pointing at a missing object.
+  app.post(`${PROFILE}/avatar`, ownsTheProfile(), async (c) => {
+    return c.json(await useCases.startAvatarUpload(c.req.param('userId')), 201)
   })
 
   app.delete(PROFILE, ownsTheProfile(), async (c) => {

@@ -13,6 +13,41 @@ services:
       timeout: 3s
       retries: 15
 
+  # MinIO speaks the S3 API, so the same code runs against real S3 by changing an endpoint —
+  # the dependency is on a protocol, not a vendor. AGPL v3, so the tag is pinned rather than
+  # tracking latest: a licence change arriving silently on `docker compose pull` is not a
+  # surprise anyone wants.
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # Provisioning, not application logic: the bucket exists before the service needs it, and it
+  # is readable anonymously because an avatar is a picture a runner chose to show other runners.
+  # Keys carry a uuid, so the URL is unguessable even though the bucket is open.
+  create-bucket:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set store http://minio:9000 minioadmin minioadmin
+        mc mb --ignore-existing store/avatars
+        mc anonymous set download store/avatars
+
   # Same image as the service, different command, run once and gone. Never on the service's
   # boot: three replicas starting together would be three migrations against one schema.
   migrate:
@@ -39,6 +74,13 @@ services:
       LOG_LEVEL: info
       # /ready answers 503 for this long before the server stops accepting.
       SHUTDOWN_DRAIN_MS: "3000"
+      # Two endpoints, deliberately: a presigned URL is signed over its host, so one is how the
+      # service reaches MinIO and the other is how a browser does.
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: http://localhost:9000
+      OBJECT_STORAGE_BUCKET: avatars
+      OBJECT_STORAGE_ACCESS_KEY: minioadmin
+      OBJECT_STORAGE_SECRET_KEY: minioadmin
     # Must exceed SHUTDOWN_DRAIN_MS plus the close deadline, or the container is killed
     # mid-drain and the graceful shutdown is worse than none. 3s + 10s, with room.
     stop_grace_period: 20s
@@ -46,4 +88,6 @@ services:
       postgres:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      create-bucket:
         condition: service_completed_successfully

@@ -18,11 +18,11 @@ Nothing is built yet. `src/`, `tests/` and `drizzle/` exist and are empty; the c
 | Observability | `pino` 10 for structured JSON logs, with `pino-pretty` 13 in development only. No metrics and no tracing yet — this row is where they would go. Not installed yet |
 | Quality | Vitest 5, unit and integration in separate configs; the integration suite provisions its own PostgreSQL with `@testcontainers/postgresql` 12. `openapi.yaml` is checked against real responses by `ajv` 8 and `yaml` 2. None of those three is installed yet. ESLint 10 + typescript-eslint enforces the import zones |
 | Build and packaging | `tsc` to `dist/`, no bundler; then a multi-stage Docker image, which is the unit of deployment |
-| Integrations | **Object storage** — MinIO via `@aws-sdk/client-s3`, not started. **Messaging** — nothing chosen: no broker, no outbox, no published event. Deliberate, not an oversight — the two event-shaped questions sit under **Deferred on purpose**, undecided |
+| Integrations | **Object storage** — MinIO via `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner`, pinned by release tag. **Messaging** — nothing chosen: no broker, no outbox, no published event. Deliberate, not an oversight — the two event-shaped questions sit under **Deferred on purpose**, undecided |
 
-Seven packages named above are not installed yet, and they split along the line the container cares about. Three will ship inside it — `jose`, `pino` and `@aws-sdk/client-s3`. Four never leave the toolbox: `pino-pretty`, `@testcontainers/postgresql`, `ajv` and `yaml`.
+Everything above is installed. Each arrived in the phase that first used it, never earlier — a dependency installed ahead of the code that exercises it is an unverified guess, and its version is stale by the time it matters.
 
-They are the only additions `package.json` needs, and each lands in the phase that first uses it, never earlier — a dependency installed ahead of the code that exercises it is an unverified guess, and its version is stale by the time it matters.
+They split along the line the container cares about: `hono`, `@hono/node-server`, `drizzle-orm`, `pg`, `zod`, `jose`, `pino` and the two `@aws-sdk` packages ship inside it; everything else stays in the toolbox and is stripped by `npm ci --omit=dev`.
 
 `exactOptionalPropertyTypes` is the flag that shapes the domain: an optional field is *omitted*, never passed as `undefined`. That is what makes domain.md §3's "an unset scalar is absent" true in the type system rather than only in prose.
 
@@ -203,15 +203,22 @@ Until here the service runs on a laptop. This phase makes it an artifact.
 
 ### 7 — Avatar storage
 
-domain.md §1 says the image lives in object storage owned by this service and only its key is stored here. Nothing resolves that key yet.
+domain.md §1 says the image lives in object storage owned by this service and only its key is stored here.
 
-**MinIO** in `docker-compose.yml`, reached with `@aws-sdk/client-s3`. MinIO speaks the S3 API, so the same code runs against real S3 by changing an endpoint — the dependency is on a protocol, not a vendor. It is AGPL v3; pin a tag rather than tracking `latest`.
+**MinIO** in `docker-compose.yml`, reached with `@aws-sdk/client-s3`. MinIO speaks the S3 API, so the same code runs against real S3 by changing an endpoint — the dependency is on a protocol, not a vendor. It is AGPL v3, so the tag is pinned by release rather than tracking `latest`.
 
-The domain does not change — `avatarRef` is already a string with a §4 rule, which is the evidence the boundary was drawn in the right place. The port goes in `application/`, not `domain/`: unlike `ProfileRepository`, the domain never resolves an avatar key, so storing images is not a domain concept.
+The domain did not change. `avatarRef` is still a string with a §4 rule, which is the evidence the boundary was drawn in the right place. The port lives in `application/`, not `domain/`: unlike `ProfileRepository`, the domain never resolves an avatar key, so storing images is not a domain concept. Implementing that port is the one thing `infrastructure/` may import from `application/`, and only as a type — a lint zone allows the contract across and still refuses a call.
 
-Four decisions, none made: proxy or presigned upload; public bucket or presigned reads; key format; and who deletes the image when the profile is deleted — two systems that cannot commit together.
+The four decisions, taken:
 
-**Done when** an image can be uploaded, its key stored on the profile, and the image fetched back.
+- **Presigned upload, not proxied.** `POST /v1/profiles/{userId}/avatar` returns a short-lived URL and the key it will occupy; the client PUTs the image to MinIO directly and this service never handles image bytes. It also does not set `avatarRef` — the runner PATCHes it once the upload succeeds, so a failed upload leaves nothing pointing at an object that is not there, and changing a field stays `updateProfile`'s job
+- **Public bucket, unguessable keys.** An avatar is a picture a runner chose to show other runners, so reads need no signature and can be cached. The key carries a uuid, so the URL is unguessable even though the bucket is open
+- **`avatars/{userId}/{uuid}`.** A fresh uuid per upload, so replacing an avatar cannot collide with a cached copy of the old one. Grouping by `userId` is what pays for the next decision
+- **Best-effort delete, orphans tolerated.** `deleteProfile` asks storage to drop the runner's prefix after the row is gone; a storage failure is logged and the profile stays deleted, because the two cannot commit together and a profile that refuses to die is the worse outcome. Because keys are prefixed by `userId`, this needs no read of the profile first — `deleteProfile` is still one statement against the repository
+
+The authoritative cleanup for orphans would be a sweeper comparing keys against existing profiles, and that needs a bulk read, which §3 forbids. The same decision deferred for Discovery blocks it here.
+
+**Done when** an image can be uploaded, its key stored on the profile, and the image fetched back — verified end to end against real MinIO: create 201, authorise 201, PUT to MinIO 200, PATCH 200, anonymous GET 200 with identical bytes, delete 204 and the image then 404.
 
 ## Decisions taken
 

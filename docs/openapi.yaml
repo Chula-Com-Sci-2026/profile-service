@@ -7,7 +7,8 @@ info:
   description: |
     The HTTP contract for Profile Service. Derived from `domain.md`, which is
     authoritative: this file maps its four operations onto one resource, and adds
-    two operational endpoints the model knows nothing about.
+    two operational endpoints the model knows nothing about, and the avatar upload
+    handshake, which exists because the image lives in object storage rather than here.
 
     The Identity Service assigns the `userId`, so a client knows the URI before
     the profile exists — which is why creation is a `PUT` rather than a `POST`
@@ -85,6 +86,47 @@ paths:
         '204': { description: Deleted }
         '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
         '403': { $ref: '#/components/responses/Problem' }   # only the owner may delete a profile
+        '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
+        default: { $ref: '#/components/responses/Problem' }
+
+  /v1/profiles/{userId}/avatar:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 64 }
+
+    post:
+      operationId: startAvatarUpload
+      summary: Ask for permission to upload an avatar
+      description: >-
+        Returns a short-lived URL the client PUTs the image to directly, and the key that upload
+        will occupy. The service never handles image bytes — it is an API, not a file server.
+
+        It does not change the profile. Once the upload succeeds, PATCH `avatarRef` with the key
+        returned here; until then the profile is untouched, so a failed upload leaves nothing
+        pointing at an object that does not exist. Setting the field is `updateProfile`'s job and
+        stays that way.
+      responses:
+        '201':
+          description: An upload is authorised
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [uploadUrl, avatarRef, expiresInSeconds]
+                properties:
+                  uploadUrl:
+                    type: string
+                    description: PUT the image here. Expires — ask again rather than storing it.
+                  avatarRef:
+                    type: string
+                    maxLength: 128
+                    description: The key the upload will occupy. Send it back as `avatarRef`.
+                  expiresInSeconds: { type: integer, minimum: 1 }
+        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
+        '403': { $ref: '#/components/responses/Problem' }   # a runner may only upload their own
         '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
         default: { $ref: '#/components/responses/Problem' }
 

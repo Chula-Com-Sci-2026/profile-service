@@ -4,10 +4,12 @@ import { pino } from 'pino'
 import { createProfile } from './application/create-profile.ts'
 import { deleteProfile } from './application/delete-profile.ts'
 import { getProfile } from './application/get-profile.ts'
+import { startAvatarUpload } from './application/start-avatar-upload.ts'
 import { updateProfile } from './application/update-profile.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
+import { createAvatarStorage } from './infrastructure/minio-avatar-storage.ts'
 import { createApp } from './interface/http/app.ts'
 import { remoteIdentityKeys } from './interface/http/authentication.ts'
 
@@ -31,6 +33,7 @@ const database = createDatabase(config.databaseUrl, (error) => {
   logger.error({ err: error }, 'an idle database connection failed')
 })
 const repository = new DrizzleProfileRepository(database.db)
+const avatars = createAvatarStorage(config.objectStorage)
 
 /** Flipped before anything stops accepting, so /ready answers 503 first. */
 let draining = false
@@ -40,7 +43,12 @@ const app = createApp({
     createProfile: createProfile(repository),
     getProfile: getProfile(repository),
     updateProfile: updateProfile(repository),
-    deleteProfile: deleteProfile(repository),
+    deleteProfile: deleteProfile(repository, avatars, (userId, error) => {
+      // The profile is gone and its images are not. Storage and the database cannot commit
+      // together, so this is logged and tolerated rather than retried into a hung delete.
+      logger.error({ err: error, userId }, 'avatar objects orphaned after deleting a profile')
+    }),
+    startAvatarUpload: startAvatarUpload(repository, avatars),
   },
   logger,
   authentication: {

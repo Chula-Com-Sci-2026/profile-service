@@ -36,11 +36,32 @@ export default tseslint.config(
     ['**/infrastructure/**', '**/interface/**', '**/scripts/**', ...FRAMEWORKS, ...ADAPTERS],
     'application/ depends on domain/ and its repository interface — never on infrastructure or HTTP.',
   ),
-  zone(
-    ['src/infrastructure/**/*.ts'],
-    ['**/application/**', '**/interface/**', '**/scripts/**', 'hono', 'hono/*', '@hono/*', 'jose'],
-    'infrastructure/ implements domain interfaces — it does not know the application or HTTP exists.',
-  ),
+  {
+    files: ['src/infrastructure/**/*.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/interface/**', '**/scripts/**', 'hono', 'hono/*', '@hono/*', 'jose'],
+              message: 'infrastructure/ implements ports — it does not know HTTP exists.',
+            },
+            {
+              // A driven port may be declared in application/ when the domain has no use for it:
+              // the domain never resolves an avatar key. Implementing that contract is inward-
+              // pointing and allowed; calling a use case is not, so only the type may cross.
+              group: ['**/application/**'],
+              allowTypeImports: true,
+              message:
+                'infrastructure/ may implement a port declared in application/, but must not call application code — import the type only.',
+            },
+          ],
+        },
+      ],
+    },
+  },
   zone(
     ['src/interface/**/*.ts'],
     ['**/infrastructure/**', '**/scripts/**', 'drizzle-orm', 'drizzle-orm/*', 'pg'],
