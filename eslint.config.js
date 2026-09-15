@@ -51,11 +51,16 @@ export default tseslint.config(
             {
               // A driven port may be declared in application/ when the domain has no use for it:
               // the domain never resolves an avatar key. Implementing that contract is inward-
-              // pointing and allowed; calling a use case is not, so only the type may cross.
-              group: ['**/application/**'],
+              // pointing and allowed; calling a use case is not, so only the type may cross —
+              // and only from ports/, so the allowance cannot quietly widen into "any type".
+              group: ['**/application/**', '!**/application/ports/**'],
+              message: 'infrastructure/ implements ports — it does not call application code.',
+            },
+            {
+              group: ['**/application/ports/**'],
               allowTypeImports: true,
               message:
-                'infrastructure/ may implement a port declared in application/, but must not call application code — import the type only.',
+                'infrastructure/ may implement a port, but must not import it as a value — the type alone.',
             },
           ],
         },

@@ -34,6 +34,7 @@ This file is the only record of the stack and the layering rules. There is no `C
 src/
 ├─ domain/           entities, value objects, domain errors, repository interfaces
 ├─ application/      use cases, one file per use case
+│  └─ ports/        contracts infrastructure implements — the one thing it may import from here
 ├─ infrastructure/   drizzle schema, repository implementation, db client, config
 ├─ interface/http/   hono routes, middleware, zod validators, mappers
 └─ index.ts          composition root — the only file that knows every layer
@@ -49,7 +50,7 @@ interface/http ──► application ──► domain ◄── infrastructure
 ```
 
 - `domain/` imports only other domain files and Node built-ins — no framework, no ORM, no HTTP, no logger
-- `application/` depends on `domain/` and on the repository *interface* declared there, never on `infrastructure/`
+- `application/` depends on `domain/` and on the repository *interface* declared there, never on `infrastructure/`. It may declare its own ports in `ports/` for things the domain has no use for
 - `infrastructure/` is the only place the ORM appears
 - `interface/http/` holds no business rules
 
@@ -207,7 +208,7 @@ domain.md §1 says the image lives in object storage owned by this service and o
 
 **MinIO** in `docker-compose.yml`, reached with `@aws-sdk/client-s3`. MinIO speaks the S3 API, so the same code runs against real S3 by changing an endpoint — the dependency is on a protocol, not a vendor. It is AGPL v3, so the tag is pinned by release rather than tracking `latest`.
 
-The domain did not change. `avatarRef` is still a string with a §4 rule, which is the evidence the boundary was drawn in the right place. The port lives in `application/`, not `domain/`: unlike `ProfileRepository`, the domain never resolves an avatar key, so storing images is not a domain concept. Implementing that port is the one thing `infrastructure/` may import from `application/`, and only as a type — a lint zone allows the contract across and still refuses a call.
+The domain did not change. `avatarRef` is still a string with a §4 rule, which is the evidence the boundary was drawn in the right place. The port lives in `application/`, not `domain/`: unlike `ProfileRepository`, the domain never resolves an avatar key, so storing images is not a domain concept. Ports live in `application/ports/`, and that directory is the only thing `infrastructure/` may import from `application/` — as a type, never as a value. The zone was first written as "any type from application", which said more than it meant: nothing stopped an adapter importing a use case's input type and shaping itself around application concepts. Narrowing it to `ports/` makes the rule say what the sentence says.
 
 The four decisions, taken:
 

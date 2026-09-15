@@ -1,6 +1,6 @@
 import { ProfileNotFoundError } from '../domain/errors.ts'
 import type { ProfileRepository } from '../domain/profile-repository.ts'
-import type { AvatarStorage } from './avatar-storage.ts'
+import type { AvatarStorage } from './ports/avatar-storage.ts'
 
 export type DeleteProfile = (userId: string) => Promise<void>
 

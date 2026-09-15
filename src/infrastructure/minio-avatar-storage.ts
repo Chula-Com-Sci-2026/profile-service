@@ -7,7 +7,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import type { AvatarStorage, AvatarUpload } from '../application/avatar-storage.ts'
+import type { AvatarStorage, AvatarUpload } from '../application/ports/avatar-storage.ts'
 
 export type ObjectStorageOptions = {
   /** Where this service reaches the store. Inside compose, `http://minio:9000`. */

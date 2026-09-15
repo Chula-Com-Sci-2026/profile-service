@@ -1,4 +1,4 @@
-import type { AvatarStorage, AvatarUpload } from '../../../src/application/avatar-storage.ts'
+import type { AvatarStorage, AvatarUpload } from '../../../src/application/ports/avatar-storage.ts'
 
 /** Records what it was asked to do, and can be told to fail. */
 export class FakeAvatarStorage implements AvatarStorage {

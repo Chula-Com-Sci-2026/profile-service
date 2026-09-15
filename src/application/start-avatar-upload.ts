@@ -1,6 +1,6 @@
 import { ProfileNotFoundError } from '../domain/errors.ts'
 import type { ProfileRepository } from '../domain/profile-repository.ts'
-import type { AvatarStorage, AvatarUpload } from './avatar-storage.ts'
+import type { AvatarStorage, AvatarUpload } from './ports/avatar-storage.ts'
 
 export type StartAvatarUpload = (userId: string) => Promise<AvatarUpload>
 

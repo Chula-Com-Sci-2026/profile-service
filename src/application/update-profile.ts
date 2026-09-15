@@ -1,7 +1,7 @@
 import { ProfileNotFoundError } from '../domain/errors.ts'
 import type { Profile, ProfileChanges } from '../domain/profile.ts'
 import type { ProfileRepository } from '../domain/profile-repository.ts'
-import type { AvatarStorage } from './avatar-storage.ts'
+import type { AvatarStorage } from './ports/avatar-storage.ts'
 
 export type UpdateProfile = (userId: string, changes: ProfileChanges) => Promise<Profile>
 

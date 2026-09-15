@@ -1,4 +1,10 @@
 /**
+ * A driven port: declared by the layer that needs it, implemented in `infrastructure/`.
+ *
+ * `ports/` is the one place `infrastructure/` may import a type from — the lint zone allows
+ * exactly this directory and nothing else under `application/`. Anything that is not a contract
+ * for an adapter to implement does not belong here.
+ *
  * Where a runner's profile image lives — object storage owned by this service (domain.md §1).
  *
  * The port is here rather than in `domain/`: unlike `ProfileRepository`, the domain never
