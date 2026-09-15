@@ -26,6 +26,11 @@ paths:
       - name: userId
         in: path
         required: true
+        description: >-
+          The Identity Service's id for a runner. The bounds describe a valid id; they are not
+          a rejection. A value outside them is not refused here — it simply matches no profile,
+          so read, change and delete answer 404, while create fails on the same §4 rule as any
+          other bad field and answers 422.
         schema: { type: string, minLength: 1, maxLength: 64 }
 
     put:

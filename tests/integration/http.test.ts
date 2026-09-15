@@ -392,6 +392,18 @@ describe('a SyntaxError from below the route', () => {
   })
 })
 
+describe('a userId outside the bounds the contract declares', () => {
+  const tooLong = 'x'.repeat(100)
+
+  it('matches no profile on read — 404, not a special rejection', async () => {
+    await expectContract('getProfile', 404, await as(tooLong, `/v1/profiles/${tooLong}`))
+  })
+
+  it('fails §4 on create, like any other bad field — 422', async () => {
+    await expectContract('createProfile', 422, await put(tooLong, minimal))
+  })
+})
+
 describe('the contract itself', () => {
   it('has every documented response exercised by at least one test', () => {
     expect([...exercised].sort()).toEqual([...documentedResponses].sort())
