@@ -28,6 +28,12 @@ curl http://localhost:3000/ready    # {"status":"ready"}
 Profile endpoints answer **401** — they need a token from the Identity Service, and no Identity
 runs in this stack. `/health` and `/ready` are the two that work without one.
 
+So you cannot call the profile API from here yet. That is not a bug: this service verifies
+Identity's signature on every request and cannot mint a token for you, which is the point — it
+can check, and only Identity can sign. To exercise the API you need Identity running and
+`IDENTITY_JWKS_URL` pointing at it. Until then, `npm run test:int` is where the profile
+endpoints actually get driven, tokens and all.
+
 ## Work on it
 
 ```bash
@@ -48,12 +54,24 @@ npm run dev                                       # restarts on save, readable l
 | `npm run test:int` | integration tests — starts its own PostgreSQL, so no setup |
 | `npm run typecheck` · `npm run lint` | both must pass |
 | `npm run build` | compile to `dist/` |
+| `npm start` | run what `build` produced — this is what the container runs |
 | `npm run db:migrate` | apply migrations |
 | `npm run db:seed` | reload the sample runners (**truncates first**) |
 | `npm run db:reset` | throw the database away and start it again |
+| `npm run db:generate` | after changing `src/infrastructure/schema.ts`, write the migration for it |
 
 `npm run test:int` needs nothing set up. It starts a PostgreSQL container, migrates it, runs, and
-throws it away — so it passes on a machine that has never seen this project.
+throws it away — so it passes on a machine that has never seen this project. Give it about ten
+seconds; most of that is the container.
+
+Building and running it yourself, without Docker doing it for you:
+
+```bash
+npm run build && npm start
+```
+
+Same code the image runs — the container is `node dist/index.js` too. It needs the same
+environment, so `.env` must be in place and PostgreSQL and MinIO must be up.
 
 ## Two things that will confuse you otherwise
 
