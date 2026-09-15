@@ -26,7 +26,7 @@ They split along the line the container cares about: `hono`, `@hono/node-server`
 
 `exactOptionalPropertyTypes` is the flag that shapes the domain: an optional field is *omitted*, never passed as `undefined`. That is what makes domain.md §3's "an unset scalar is absent" true in the type system rather than only in prose.
 
-This file is the only record of the stack and the layering rules. There is no `CLAUDE.md`, and no README yet — that second absence is deliberate and listed under **Deferred on purpose**.
+This file is the only record of the stack and the layering rules — the why, at length. [README.md](../README.md) is the other half: what to type, short enough to read before you start. There is no `CLAUDE.md`.
 
 ## Layout and the one rule
 
@@ -256,7 +256,6 @@ The authoritative cleanup for orphans would be a sweeper comparing keys against 
 
   Not done, because getting a URL needs a verified token for the profile being written, the URL expires in 300 seconds, and every account is one we issued. The trigger is the first untrusted user, or the first time avatars are served from this service's own domain rather than the storage origin — at which point "it is a different origin" stops being the mitigation it currently is.
 - **CI** — there is no remote for a workflow to run on and nobody else pushes, so there is nothing to gate. The trigger is the remote. What it would be worth then is not gatekeeping but a clean-room run of exactly what the team does — `npm ci`, typecheck, lint, test, `test:int`, build — catching the "works on the author's machine" failures, which land on them and never on us. `test:int` needs no CI-specific database, since the suite provisions its own. Once phase 6 exists, publishing the image matters more than any of it: the team would deploy a tag rather than build from source
-- **README** — the team's job is clone, build, test, deploy, and nothing tells them the commands. Deferring is only defensible because there is nothing to run yet: `npm run dev` names a file that does not exist. The trigger is the end of phase 5, when the service starts for the first time — before then a README would document commands that fail. Four things belong in it: the Docker prerequisite, the scripts, how to seed, and how to reach the service.
 
 ## Definition of done
 
