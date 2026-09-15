@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@testcontainers/postgresql": "^12.1.0",
     "@types/node": "^24.13.4",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "^0.31.10",
@@ -41,6 +42,7 @@
     }
   },
   "allowScripts": {
-    "esbuild": false
+    "esbuild": false,
+    "cpu-features": false
   }
 }
