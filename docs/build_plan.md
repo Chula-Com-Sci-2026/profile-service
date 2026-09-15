@@ -4,26 +4,29 @@
 
 Nothing is built yet. `src/`, `tests/` and `drizzle/` exist and are empty; the configuration, the two specs above and `scripts/seed.json` are the whole starting point.
 
+**Prerequisites: Node ≥ 24 and a running Docker engine.** Docker is not optional in any phase — PostgreSQL runs in it for development, the integration tests start their own container, and phase 6 ships the service as an image. Nothing else needs installing by hand.
+
 ## Stack
 
 | | |
 |---|---|
-| Runtime | Node ≥ 22, ESM (`"type": "module"`) |
-| Language | TypeScript `~6.0.3` — `strict`, plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`. Tilde, not caret: `typescript-eslint` peers `<6.1.0` |
-| HTTP | Hono 4 + `@hono/node-server` |
-| Validation | Zod 4 — at the edge only |
-| Database | PostgreSQL 17 (`docker-compose.yml`), Drizzle ORM 0.45 + `pg`. `package.json` pins a safe `esbuild` inside `drizzle-kit`'s dependency tree via `overrides` — without it `npm audit` reports 4 moderate advisories |
-| Tests | Vitest 5 — two configs, unit and integration |
-| Lint | ESLint 10 + typescript-eslint |
-| Runner | `tsx` |
-| Auth | `jose` 6 — zero dependencies, Web Crypto, `createRemoteJWKSet` for Identity's key rotation. Not installed yet; phase 4 |
-| Objects | MinIO over the S3 API, via `@aws-sdk/client-s3` — phase 6, not started |
+| Runtime | Node ≥ 24, ESM (`"type": "module"`). `@types/node` stays on the matching major, so TypeScript only knows the APIs this Node actually has — newer types would let code compile and then crash |
+| Language | TypeScript `~6.0.3` — `strict`, plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax` and `erasableSyntaxOnly`. Tilde rather than caret because `typescript-eslint` refuses TypeScript 6.1 and above: a caret would pull it on someone's next install and break `npm run lint` |
+| HTTP | Hono 4 + `@hono/node-server`, with Zod 4 validating at the edge and nowhere else — shape at the boundary, rules in the domain |
+| Auth | `jose` 6 — zero dependencies, built on Web Crypto. It fetches Identity's public keys from a URL and fetches again when Identity replaces them, so a key rotation there needs no redeploy here. Not installed yet |
+| Data | PostgreSQL 17 (`docker-compose.yml`), Drizzle ORM 0.45 + `pg`. Drizzle has no decorators and no active record, so the aggregate carries no persistence annotations — the schema is a separate declaration in `infrastructure/` and a mapper bridges the two |
+| Observability | `pino` 10 for structured JSON logs, with `pino-pretty` 13 in development only. No metrics and no tracing yet — this row is where they would go. Not installed yet |
+| Quality | Vitest 5, unit and integration in separate configs; the integration suite provisions its own PostgreSQL with `@testcontainers/postgresql` 12. `openapi.yaml` is checked against real responses by `ajv` 8 and `yaml` 2. None of those three is installed yet. ESLint 10 + typescript-eslint enforces the import zones |
+| Build and packaging | `tsc` to `dist/`, no bundler; then a multi-stage Docker image, which is the unit of deployment |
+| Integrations | **Object storage** — MinIO via `@aws-sdk/client-s3`, not started. **Messaging** — nothing chosen: no broker, no outbox, no published event. Deliberate, not an oversight — the two event-shaped questions sit under **Deferred on purpose**, undecided |
 
-`jose` and `@aws-sdk/client-s3` are not installed. They are the only additions to `package.json` the remaining phases require.
+Seven packages named above are not installed yet, and they split along the line the container cares about. Three will ship inside it — `jose`, `pino` and `@aws-sdk/client-s3`. Four never leave the toolbox: `pino-pretty`, `@testcontainers/postgresql`, `ajv` and `yaml`.
+
+They are the only additions `package.json` needs, and each lands in the phase that first uses it, never earlier — a dependency installed ahead of the code that exercises it is an unverified guess, and its version is stale by the time it matters.
 
 `exactOptionalPropertyTypes` is the flag that shapes the domain: an optional field is *omitted*, never passed as `undefined`. That is what makes domain.md §3's "an unset scalar is absent" true in the type system rather than only in prose.
 
-This file is the only record of the stack and the layering rules — there is no `CLAUDE.md`.
+This file is the only record of the stack and the layering rules. There is no `CLAUDE.md`, and no README yet — that second absence is deliberate and listed under **Deferred on purpose**.
 
 ## Layout and the one rule
 
@@ -32,10 +35,11 @@ src/
 ├─ domain/           entities, value objects, domain errors, repository interfaces
 ├─ application/      use cases, one file per use case
 ├─ infrastructure/   drizzle schema, repository implementation, db client, config
-└─ interface/http/   hono routes, middleware, zod validators, mappers
+├─ interface/http/   hono routes, middleware, zod validators, mappers
+└─ index.ts          composition root — the only file that knows every layer
 tests/
 ├─ unit/             no database, no network
-└─ integration/      real PostgreSQL, serial
+└─ integration/      real PostgreSQL, serial; globalSetup starts the container
 ```
 
 **Dependencies point inward only.**
@@ -44,7 +48,10 @@ tests/
 interface/http ──► application ──► domain ◄── infrastructure
 ```
 
-`domain/` imports nothing but other domain files and Node built-ins — no Hono, no Drizzle, no Zod, no `pg`. `application/` depends on `domain/` and on the repository *interface* declared there, never on `infrastructure/`. Drizzle appears in `infrastructure/` and nowhere else. `interface/http/` holds no business rules.
+- `domain/` imports only other domain files and Node built-ins — no framework, no ORM, no HTTP, no logger
+- `application/` depends on `domain/` and on the repository *interface* declared there, never on `infrastructure/`
+- `infrastructure/` is the only place the ORM appears
+- `interface/http/` holds no business rules
 
 The point: the domain stays testable with no database and no HTTP, and swapping Drizzle touches one directory.
 
@@ -52,25 +59,42 @@ The point: the domain stays testable with no database and no HTTP, and swapping 
 
 ## Naming across layers
 
-camelCase in TypeScript and JSON, snake_case in the database. Mapping happens in `infrastructure/`, nowhere else.
+- camelCase in TypeScript and JSON, snake_case in the database. Mapping happens in `infrastructure/`, nowhere else
+- kebab-case for file names, including files that export a single class — `preferred-distance.ts`, not `PreferredDistance.ts`. On macOS those two are the same file; on Linux they are not
+- Units live in the type, not the name — `pace` is a `Pace` and `volume` is a `Volume`, with openapi.yaml carrying "seconds per kilometre" and "metres per week". A bare number called `pace` is a bug
+- Use domain.md §2's words everywhere: class names, fields, tests, commits
 
-Units live in the type, not the name — `pace` is a `Pace`, and openapi.yaml's schema description says "seconds per kilometre". A bare number called `pace` outside a `Pace` is a bug.
+## Imports
 
-Use domain.md §2's words everywhere: class names, fields, tests, commits.
+Relative imports name the file on disk, extension included:
+
+```ts
+import { Profile } from './profile.ts'
+```
+
+TypeScript never rewrites an import specifier by itself — what you type is what ships — so an extensionless `'./profile'` compiles clean and then fails at runtime, because Node ESM requires a full specifier. Two flags make the honest spelling work: `allowImportingTsExtensions` lets the source say `.ts`, and `rewriteRelativeImportExtensions` emits `.js`.
+
+The alternative — writing `'./profile.js'` for a file that is not called that — is the more common convention, and it was rejected here for saying something untrue. If you are about to "fix" the extensions, this is the paragraph you are looking for.
+
+Verified on this toolchain: `tsc`, `node`, `vitest` and `eslint` all accept it. `moduleResolution: "nodenext"` is what turns a forgotten extension into a compile error rather than a crash in production — the same trade as the ESLint import zones.
 
 ## Phases
 
-Built inside-out, so every phase is testable the moment it exists.
+Built inside-out, so every phase is testable the moment it exists. Phases 2 and 3 are the exception: both depend only on phase 1 — a use case needs the repository *interface*, never its implementation — so either could come first. Infrastructure goes first deliberately, because Testcontainers, the migration workflow and the row-to-domain mapper are the least-known work in the plan, and learning they are wrong is cheaper in week one than in week three.
 
 ### 0 — Scaffold
 
-Already done: `package.json`, `tsconfig.json`, `eslint.config.js`, `vitest.config.ts`, `vitest.int.config.ts`, `drizzle.config.ts`, `docker-compose.yml`, `.env.example`.
+Already done: `package.json`, `tsconfig.json`, `tsconfig.build.json`, `eslint.config.js`, `vitest.config.ts`, `vitest.int.config.ts`, `drizzle.config.ts`, `docker-compose.yml`, `.env.example`.
 
-Scripts defined: `dev` · `typecheck` · `lint` · `test` · `test:int` · `db:generate` · `db:migrate` · `db:seed`. Three of them name files that do not exist yet — `src/index.ts`, `src/infrastructure/schema.ts`, `scripts/seed.ts`. They are the targets of phases 1–5.
+Scripts defined: `dev` · `build` · `typecheck` · `lint` · `test` · `test:int` · `db:generate` · `db:migrate` · `db:reset` · `db:seed`. Between them they name three files that do not exist yet — `src/index.ts`, `src/infrastructure/schema.ts` and `scripts/seed.ts` — which are the targets of phases 1–5.
 
 `eslint.config.js` already carries the import zones, so the dependency rule is enforced from the first file written.
 
-**Done when** `npm run typecheck`, `npm run lint` and `npm test` pass with zero source files.
+Two configs, because type-checking and emitting want different inputs. `tsconfig.json` checks everything — source, tests, scripts and the config files themselves — and emits nothing. `tsconfig.build.json` extends it and is the only one that emits: `src/` alone, `rootDir` there, `outDir` to `dist/`, source maps on so a logged stack trace points back at TypeScript.
+
+`moduleResolution` is `nodenext` rather than `Bundler`, which is what makes the import convention enforceable — see **Imports**. `erasableSyntaxOnly` keeps the source to syntax Node can strip unaided — no `enum`, no parameter properties — which the `as const` unions of phase 1 satisfy anyway, and which is what keeps `node src/index.ts` working with no build at all.
+
+**Done when** `npm run typecheck`, `npm run lint` and `npm test` pass with zero source files, and `npm run build` turns a `src/index.ts` into a `dist/index.js` that `node` runs.
 
 ### 1 — Domain
 
@@ -79,20 +103,24 @@ No database, no HTTP, no framework. Everything here comes from domain.md §3, §
 - Value object classes — `Pace`, `Volume`, `PreferredDistance`, `PreferredRunTime`. Each validates in its constructor, is immutable after, and is compared by value
 - Union types — `Gender`, `Area`, `Experience`. `as const` arrays plus `typeof X[number]`, so one declaration gives both a runtime list and the type
 - `Profile` — the aggregate root. Validates the five plain fields itself — `userId`, `displayName`, `bio`, `avatarRef`, `birthYear` (§4) — holds the value objects, and is frozen. `userId` is its identity
+- `profile.update(changes)` returns a **new** frozen `Profile` rather than mutating. What an absent field means and what a null means are domain rules, so the merge happens here and not in `application/`. One method, not `rename()` and `moveTo()`: §2's language contains no intention richer than editing a profile, and the API delivers a single merge patch — there is nothing to reveal that `updateProfile()` does not already say
 - Domain errors — `ProfileNotFoundError`, `ProfileAlreadyExistsError`, and one for a field that breaks a §4 rule. Never an HTTP status in this layer
-- `ProfileRepository` interface — `findById`, `insert`, `update`, `delete`. `insert` and `update` are separate so §5's invariant is enforced by the primary key, not by a check-then-write race
+- `ProfileRepository` interface — `findById`, `insert`, `update`, `delete`. `insert` and `update` are separate so §5's invariant is enforced by the primary key, not by a check-then-write race. **Reads report absence, writes raise conflicts**: `findById` returns `Profile | null` and `delete` reports whether a row went, because a missing profile is a normal result of a query — treating it as an error is policy, and policy belongs to the use case. `insert` does throw `ProfileAlreadyExistsError`, since a unique violation is not a normal outcome of a write
 
 **Done when** every rule in §4 has a unit test that runs with no database, including the rejections.
 
 ### 2 — Infrastructure
 
-- Drizzle schema at `src/infrastructure/schema.ts` — `drizzle.config.ts` already points there. `user_id text PRIMARY KEY`, one row per profile, no surrogate id
+- Drizzle schema at `src/infrastructure/schema.ts` — `drizzle.config.ts` already points there. One table, `profiles` — `user_id text PRIMARY KEY`, one row per profile, no surrogate id
 - Twelve columns, one per §3 field. `NOT NULL` on the three required fields **and on both sets** — an unset set is `[]`, never null, so the column has no third state. `text` for the unions, not Postgres `enum` — the `area` list is expected to change
 - Collections stay in the row as `jsonb`. Nothing queries them — there is no list or search — so per-member indexes and child tables buy nothing, and one row keeps "loaded and saved as one unit" literal
 - Sets are normalised on write — members sorted into declared enum order (`5k` before `10k`, `mon` before `tue`), never alphabetical. Storage is then deterministic and tests can assert literal arrays
 - `npm run db:generate` for the migration, committed to `drizzle/`. It creates `drizzle/meta/` itself — an *empty* `meta/` makes it fail on a missing `_journal.json`, so never create that folder by hand
-- `DrizzleProfileRepository implements ProfileRepository`
+- `DrizzleProfileRepository implements ProfileRepository`. This is also where a driver error becomes a domain one: a unique violation on `user_id`, SQLSTATE `23505`, is caught here and rethrown as `ProfileAlreadyExistsError`, so nothing above this layer ever sees a `pg` error
 - A mapper both ways: snake_case ↔ camelCase, columns ↔ value objects. **Row → domain is a boundary** — every union and value object is re-validated on the way in, because §4's rules live in TypeScript and the table enforces none of them
+- **Integration tests bring their own database.** A `globalSetup` starts `postgres:17-alpine` through Testcontainers, applies the migrations, hands the URL to the suite, and stops the container afterwards. Between tests, `TRUNCATE profiles` — one table needs nothing cleverer. `docker-compose.yml` is untouched and still serves `npm run dev` and `db:seed`
+
+  The consequence worth having: **`git clone && npm ci && npm run test:int` passes on a machine that has never seen this project** — no port to free, no database to create by hand, no second environment variable, and the same command in CI as on a laptop. It asks one thing in return, that Docker is running, which every option here asks anyway. Two notes: the image tag appears in both `docker-compose.yml` and the setup file and the two must move together, and `vitest.int.config.ts` no longer needs its `.env` load for `DATABASE_URL`, since the container supplies it
 
 **Done when** repository integration tests pass against real PostgreSQL — not a mock, not sqlite. Include the unique-violation path: driver errors may be wrapped, so find the SQLSTATE rather than assuming its depth.
 
@@ -104,7 +132,9 @@ One file per use case, named exactly for domain.md §3's operations:
 createProfile   getProfile   updateProfile   deleteProfile
 ```
 
-Each takes the repository interface, never a concrete class. `updateProfile` takes a set of changes: an absent field is left alone, an explicit null clears it. That is a partial-update semantic, not an HTTP one — the media type that expresses it is phase 4's business.
+Each takes the repository interface, never a concrete class. `updateProfile` takes a set of changes: an absent field is left alone, an explicit null clears it. That is a partial-update semantic, not an HTTP one — the media type that expresses it is phase 4's business, and the merge itself belongs to `profile.update()` from phase 1.
+
+A missing profile is an **exception, never a `null` return**: `getProfile`, `updateProfile` and `deleteProfile` all throw `ProfileNotFoundError`, which is what phase 4 maps to 404. Returning null instead would move a domain fact — *this runner has no profile* — out to the edge for the HTTP layer to reinterpret.
 
 **Done when** each use case has a test using an in-memory repository, with no database. Helpers and test doubles live beside the suite that uses them — there is no shared `support/` folder.
 
@@ -112,7 +142,12 @@ Each takes the repository interface, never a concrete class. `updateProfile` tak
 
 Everything here comes from openapi.yaml.
 
+The middleware in this phase are factories. The base logger and the config object they need belong to phase 5's composition root, so this phase declares what it requires and takes it as an argument rather than constructing it — which is why the dependency appears to point forward.
+
+Order is error handler outermost, then request context, then auth, then routes — the only arrangement in which the error handler can catch what the others throw. **Auth is mounted on `/v1/*`, not globally**, so `/health` never reaches it. That mirrors openapi.yaml, where `/health` is the one operation carrying `security: []`, and unlike relying on registration order it survives someone reshuffling the routes.
+
 - Hono routes for the four verbs on `/v1/profiles/:userId`, plus `GET /health` returning `{"status":"ok"}` without touching the database — `/health` is the one public endpoint
+- One middleware, first in the chain, establishes the request context: it reads `traceparent` or `X-Request-Id`, generates a UUID when neither is present (`node:crypto` — no dependency), echoes it back on the response, and puts `log = base.child({ requestId })` on the context. Every line written while serving that request then carries the id, with no logger threaded through call signatures. `hono/logger` exists but writes prose rather than JSON, so it is not used
 - One middleware verifies the bearer JWT from Identity **locally** with `jose` and produces a typed `caller` from its subject. No route, use case or domain object ever sees a header or a token. Ownership is then one comparison: caller vs the `userId` in the path
 
   ```ts
@@ -122,22 +157,43 @@ Everything here comes from openapi.yaml.
   ```
 
   `createRemoteJWKSet` fetches and caches Identity's public keys, so rotation needs no redeploy here. Verification is asymmetric on purpose: Identity signs, this service can only check — a shared secret would let either mint tokens for the other
-- Zod validators matched to `ProfileWrite` and `ProfilePatch` — shape only; the rules live in the domain. A patch body is *not* the resource shape: seven fields accept `null` to clear, `displayName` and `birthYear` do not, and a set is replaced by sending a new array
+- Zod validators matched to `ProfileWrite` and `ProfilePatch` — shape only; the rules live in the domain. A patch body is *not* the resource shape: seven fields accept `null` to clear, `displayName` and `birthYear` do not, and a set is replaced by sending a new array. Zod infers an optional field as `T | undefined`, which `exactOptionalPropertyTypes` refuses to hand to the domain — so the mapper omits the key, `...(v !== undefined && { k: v })`, rather than forwarding an `undefined`
 - A view mapper: domain object → JSON. An unset scalar is absent, never null; an unset set is `[]`; `Pace` becomes a bare number
-- Error middleware: domain error → RFC 9457 problem+json with `title`, `status`, optional `detail` — and the statuses openapi.yaml enumerates: **400** malformed body or unknown field, **401** no or invalid token, **403** not the owner, **404** no such profile, **409** already exists, **422** a value breaks a §4 rule, **500** otherwise
+- Error middleware: domain error → RFC 9457 problem+json with `title`, `status`, optional `detail` — and the statuses openapi.yaml enumerates: **400** malformed body or unknown field, **401** no or invalid token, **403** not the owner, **404** no such profile, **409** already exists, **422** a value breaks a §4 rule, **500** otherwise. A 500 is the one response that deliberately tells the client nothing useful, so `log.error({ err })` here is the only record that the failure happened at all
+- **The contract is asserted, not promised.** A helper loads `openapi.yaml` once, resolves the schema for an operation and a status, and validates the response body:
 
-**Done when** integration tests cover every operation and every status openapi.yaml documents.
+  ```ts
+  expectContract('createProfile', 201, res)
+  ```
+
+  Every test gains a line, and because this phase already covers every operation and every status, the document is checked in full. OpenAPI 3.1 *is* JSON Schema 2020-12, so Ajv's 2020 build reads the schemas as they stand — `unevaluatedProperties`, the `allOf` with sibling `required`, and the `$ref`s into `ProfileFields/properties/…` all resolve — with strict mode off, since the document carries OpenAPI keywords Ajv has no opinion about. One further test asserts the reverse direction: every `operationId` in the document is exercised by at least one test, which is what catches a spec describing an endpoint nobody built
+
+**Done when** integration tests cover every operation and every status openapi.yaml documents, and every one of those responses is validated against the document itself.
 
 ### 5 — Wiring and seed
 
-- `src/index.ts` — composition root: config from environment, one pool, routes, listen
-- Config read once at startup; a missing `DATABASE_URL` or `IDENTITY_JWKS_URL` fails there, not on the first request. `.env.example` carries all four: `DATABASE_URL`, `NODE_ENV`, `PORT`, `IDENTITY_JWKS_URL`
+- `src/index.ts` — composition root: config from environment, the base logger, one pool, routes, listen. The logger is constructed here and nowhere else — level from configuration, `redact` covering the `authorization` header so a bearer token never reaches a log line, and plain JSON to stdout. Shipping, rotating and prettifying are somebody else's process — the `dev` script gains a `| pino-pretty` in this phase, a pipe rather than a transport, since a transport would run pretty-printing inside this process
+- Config read once at startup; a missing `DATABASE_URL` or `IDENTITY_JWKS_URL` fails there, not on the first request. `.env.example` carries four today — `DATABASE_URL`, `NODE_ENV`, `PORT`, `IDENTITY_JWKS_URL` — and `LOG_LEVEL` joins them here, defaulting to `info` and set to `silent` under test
 - Graceful shutdown: stop accepting, close idle connections, end the pool, and give up after a deadline rather than hanging
 - `scripts/seed.ts` — reads `scripts/seed.json` and inserts through `createProfile`, so a row that breaks §4 fails at seed time rather than landing in the table. Refuses to run when `NODE_ENV=production`; it truncates first
 
 **Done when** the service starts, serves all four operations end to end, answers `/health`, seeds, and stops cleanly.
 
-### 6 — Avatar storage
+### 6 — Packaging
+
+Until here the service runs on a laptop. This phase makes it an artifact.
+
+- **Multi-stage `Dockerfile`** — a build stage running `npm ci` and `npm run build`, then a runtime stage on the same `node:24-alpine` minor with `npm ci --omit=dev` and only `dist/` copied across. No TypeScript, no test framework, no source in the shipped image
+- **`.dockerignore` first** — without one, `.env` enters the build context and can reach the image. That is a credential leak, not a size problem
+- Run as the image's own non-root `node` user
+- **`HEALTHCHECK` against `/health`** — already public, already free of the database, and now doing the job it was designed for
+- The service joins `docker-compose.yml` beside Postgres, `depends_on` its healthcheck, so `docker compose up` is the whole demonstration
+- **SIGTERM is load-bearing.** Docker signals PID 1, and Node installs no default handler there, so phase 5's graceful shutdown is what stands between `docker stop` and ten seconds of hanging followed by SIGKILL mid-request
+- **Migrations are a separate one-shot run of the same image**, never automatic on boot — three replicas starting together would otherwise be three concurrent migrations against one schema. Same artifact, different command
+
+**Done when** `docker compose up` brings up a healthy service against a healthy database, `docker stop` ends it without severing a request, and the image carries no development dependency.
+
+### 7 — Avatar storage
 
 domain.md §1 says the image lives in object storage owned by this service and only its key is stored here. Nothing resolves that key yet.
 
@@ -158,12 +214,39 @@ Four decisions, none made: proxy or presigned upload; public bucket or presigned
 | **The `area` list** | Stays a closed union. It becomes reference data owned elsewhere only if the list outgrows a handful |
 | **Readiness probe** | Not adding one. `/health` is liveness, which is what an orchestrator restarts on |
 | **Boundary enforcement** | ESLint import zones, failing the build |
+| **Imports** | Relative specifiers carry `.ts` and TypeScript rewrites them to `.js`. The usual convention spells the extension `.js` in source; it was rejected for naming a file that does not exist. `moduleResolution: "nodenext"` makes a missing extension a compile error |
+| **Build** | `tsc` to `dist/`, no bundler. Native type stripping means `node src/index.ts` runs the source unaided, so `tsx` was dropped — `node --watch` covers the dev loop and dev then resolves modules the way production does. Both esbuild and `tsx` itself stay in the tree regardless — drizzle-kit and vite pull them — so the gain is one fewer tool of ours to reason about, not fewer bytes |
+| **Packaging** | A multi-stage image, and the service alongside Postgres in `docker-compose.yml`. Schema migrations run as a separate command, never on boot |
+| **Contract enforcement** | Responses are validated against `openapi.yaml` in the integration tests: the code must obey the document. Deliberately not the reverse — generating types *from* the spec would put a derived artifact upstream of the implementation, and generating the spec *from* the code would cost the prose, the rationale and the traceability to §3 and §4 that make it worth publishing at all. Consumer-driven contracts wait for a consumer |
+| **Test database** | Integration tests start their own PostgreSQL through Testcontainers rather than borrowing the compose one. The argument is the failure mode: a self-provisioned database fails loudly and identically for everyone, where a shared one can quietly pass against the wrong server — a teammate's own Postgres already holding port 5432, say. It also removes the onboarding steps a README would otherwise have to carry |
+| **npm hygiene** | Two blocks in `package.json` exist for reasons a tidy-up would erase. `overrides` pins a safe `esbuild` inside `drizzle-kit`'s dependency tree — delete it and `npm audit` reports 4 moderate advisories again. `allowScripts` denies esbuild's `postinstall`: npm 11 refuses install scripts until approved, and this one has nothing to do, since the compiled binary arrives as an optional dependency. Denying rather than ignoring is about the signal — a warning printed on every install becomes wallpaper, and the next package that wants to run code at install time should stand out. `npm install-scripts approve esbuild` reverses it, which is what an install skipping optional dependencies would need |
+| **Logging** | Structured JSON on stdout, one correlation id per request, nothing shipped from inside the process. `pino` costs eleven transitive dependencies where `jose` costs zero; it is bought for the child logger, which is what makes a request traceable once Identity and Discovery are at the other end of it. `domain/` never logs — it throws, and the HTTP layer decides what that is worth saying |
 
 ## Deferred on purpose
 
 - **How Discovery gets profile data** — a copy built from events we publish, or queries to us. domain.md §1 says it is a decision for both services together, and it is what decides whether a bulk read ever exists
 - **Identity deleting a runner** — §1 names the orphaned profile and leaves it unhandled. It is the first thing events would fix, so it waits on the decision above
+- **What an Identity outage does to us** — `createRemoteJWKSet` caches Identity's public keys, so a short outage costs nothing: cached keys keep verifying tokens. The unhandled case is a key rotation *during* an outage — the cache then holds keys that sign nothing, the refetch cannot succeed, and every request answers 401 until Identity returns. Whether that is acceptable, or wants a longer cache window, a grace period on stale keys, or a 503 that says "not our fault", is a phase 4 decision and nothing before then depends on it
+- **CI** — there is no remote for a workflow to run on and nobody else pushes, so there is nothing to gate. The trigger is the remote. What it would be worth then is not gatekeeping but a clean-room run of exactly what the team does — `npm ci`, typecheck, lint, test, `test:int`, build — catching the "works on the author's machine" failures, which land on them and never on us. `test:int` needs no CI-specific database, since the suite provisions its own. Once phase 6 exists, publishing the image matters more than any of it: the team would deploy a tag rather than build from source
+- **README** — the team's job is clone, build, test, deploy, and nothing tells them the commands. Deferring is only defensible because there is nothing to run yet: `npm run dev` names a file that does not exist. The trigger is the end of phase 5, when the service starts for the first time — before then a README would document commands that fail. Four things belong in it: the Docker prerequisite, the scripts, how to seed, and how to reach the service.
 
 ## Definition of done
 
-domain.md and openapi.yaml still describe what the code does.
+Each phase carries its own done-when. This is the bar for the service as a whole.
+
+**A machine checks these.** On a clean checkout, with Docker running:
+
+```
+npm ci && npm run typecheck && npm run lint && npm test && npm run test:int && npm run build
+```
+
+- `lint` passing means the dependency rule held — no layer reached across a boundary
+- `test:int` passing means every operation and every status in openapi.yaml was exercised, and every response was validated against the document itself
+- `docker compose up` brings up a healthy service against a healthy database, and `docker stop` ends it without severing a request
+
+**Only a person checks these.**
+
+- domain.md still describes the model the code implements. Nothing verifies this, which is why it is the one that rots
+- §2's words are the words in the code — class names, fields, tests, commits
+
+**Not required.** Avatar storage, messaging and CI sit under **Deferred on purpose**. The service is done without them.
