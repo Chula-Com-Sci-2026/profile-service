@@ -111,8 +111,9 @@ components:
       bearerFormat: JWT
       description: >-
         A JWT issued by the Identity Service and verified locally on every request — not
-        trusted because a gateway forwarded it. Its subject is the caller's `userId`, which
-        is what "owner only" in domain.md §3 is checked against.
+        trusted because a gateway forwarded it. Its subject is the caller's `userId`, and the
+        403 responses below compare it against the `userId` in the path. Ownership is an access
+        rule of this contract; domain.md is silent on who may act.
 
   responses:
     Profile:

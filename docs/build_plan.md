@@ -1,6 +1,6 @@
 # Build Plan — Profile Service
 
-> Status: draft. [domain.md](./domain.md) is the spec and it is authoritative; [openapi.yaml](./openapi.yaml) is the HTTP contract. This file is the order of work.
+> Status: approved. [domain.md](./domain.md) is the spec and it is authoritative; [openapi.yaml](./openapi.yaml) is the HTTP contract. This file is the order of work.
 
 Nothing is built yet. `src/`, `tests/` and `drizzle/` exist and are empty; the configuration, the two specs above and `scripts/seed.json` are the whole starting point.
 
