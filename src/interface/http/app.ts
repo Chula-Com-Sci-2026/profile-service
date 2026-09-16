@@ -89,7 +89,7 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
   // operation, and open because a token cannot be minted without an Identity to mint it.
   app.get('/docs', documentationPage)
   app.get('/docs/:asset', documentationAsset)
-  app.get('/openapi.yaml', contractDocument)
+  app.get('/openapi.yaml', contractDocument())
 
   app.put(PROFILE, ownsTheProfile(), async (c) => {
     const body = profileWrite.parse(await jsonBody(c))

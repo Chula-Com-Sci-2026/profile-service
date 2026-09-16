@@ -119,7 +119,7 @@ Dependencies point inward only: `interface → application → domain ← infras
 
 | | |
 |---|---|
-| [docs/domain.md](docs/domain.md) | **authoritative.** What a profile is and the rules it obeys — 124 lines, start here |
+| [docs/domain.md](docs/domain.md) | **authoritative.** What a profile is and the rules it obeys — start here |
 | [docs/openapi.yaml](docs/openapi.yaml) | the HTTP contract, derived from `domain.md`. Rendered at `/docs` |
 | [docs/build_plan.md](docs/build_plan.md) | why it is built this way, and what is deliberately left undone |
 

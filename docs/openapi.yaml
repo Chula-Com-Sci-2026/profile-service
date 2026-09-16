@@ -209,6 +209,7 @@ paths:
           description: The OpenAPI document
           content:
             application/yaml: {}
+        default: { $ref: '#/components/responses/Problem' }
 
 components:
   securitySchemes:

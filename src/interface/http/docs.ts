@@ -9,32 +9,30 @@ import type { Context } from 'hono'
  * Two endpoints are part of the contract — `/docs` renders it, `/openapi.yaml` hands over the
  * file — and one is not: `/docs/{asset}` is a file server for Swagger UI's own JavaScript and
  * CSS. The assets ship inside the image rather than coming from a CDN, so the page renders with
- * no network and no third-party script runs on this origin. That costs about 1.7 MB.
+ * no network and no third-party script runs on this origin. That costs 1.7 MB over the wire
+ * and 11.4 MB in the image — swagger-ui-dist ships source maps and bundles we never serve.
  *
  * Nothing here reaches past the interface layer: a document and some static files, no use case.
  */
 
-/** Resolved from `node_modules`, so the version is whatever package-lock.json pinned. */
-const require = createRequire(import.meta.url)
-
 /**
  * An allow-list, not a lookup — `readFile(join(dir, c.req.param('asset')))` would serve
- * `../../../etc/passwd` just as happily. Only these three names resolve to anything.
+ * `../../../etc/passwd` just as happily. Only these two names resolve to anything, and only
+ * these two are referenced by the page below.
  */
-const ASSETS = new Map<string, { path: string; type: string }>([
-  ['swagger-ui.css', { path: require.resolve('swagger-ui-dist/swagger-ui.css'), type: 'text/css' }],
-  [
-    'swagger-ui-bundle.js',
-    { path: require.resolve('swagger-ui-dist/swagger-ui-bundle.js'), type: 'text/javascript' },
-  ],
-  [
-    'swagger-ui-standalone-preset.js',
-    {
-      path: require.resolve('swagger-ui-dist/swagger-ui-standalone-preset.js'),
-      type: 'text/javascript',
-    },
-  ],
+const ASSETS = new Map<string, { module: string; type: string }>([
+  ['swagger-ui.css', { module: 'swagger-ui-dist/swagger-ui.css', type: 'text/css' }],
+  ['swagger-ui-bundle.js', { module: 'swagger-ui-dist/swagger-ui-bundle.js', type: 'text/javascript' }],
 ])
+
+/**
+ * Resolved per request, not at import. `app.ts` imports this module statically, so resolving at
+ * module scope makes an unresolvable `swagger-ui-dist` a boot failure of the whole service —
+ * move it to devDependencies and `npm ci --omit=dev` produces a container that never answers
+ * /health, while every test still passes because tests install dev dependencies. Lazily, the
+ * blast radius is /docs.
+ */
+const require = createRequire(import.meta.url)
 
 /**
  * `src/interface/http/` in development and `dist/interface/http/` in the image are the same
@@ -79,15 +77,25 @@ const PAGE = `<!doctype html>
 </html>
 `
 
-export const documentationPage = (c: Context): Response =>
-  c.html(PAGE)
+/** These bytes are inside the image; they cannot change while the process is alive. */
+const IMMUTABLE = { 'cache-control': 'public, max-age=3600' }
 
-export async function contractDocument(c: Context): Promise<Response> {
-  return c.body(await load(CONTRACT), 200, { 'content-type': 'application/yaml; charset=utf-8' })
-}
+export const documentationPage = (c: Context): Response => c.html(PAGE)
+
+/**
+ * Takes its path so a test can point it at a file that is not there — the deployment failure
+ * this module's own comment says `npm run test:int` cannot otherwise reach.
+ */
+export const contractDocument =
+  (path: string = CONTRACT) =>
+  async (c: Context): Promise<Response> =>
+    c.body(await load(path), 200, { 'content-type': 'application/yaml; charset=utf-8', ...IMMUTABLE })
 
 export async function documentationAsset(c: Context): Promise<Response> {
   const asset = ASSETS.get(c.req.param('asset') ?? '')
   if (asset === undefined) return c.notFound()
-  return c.body(await load(asset.path), 200, { 'content-type': asset.type })
+  return c.body(await load(require.resolve(asset.module)), 200, {
+    'content-type': asset.type,
+    ...IMMUTABLE,
+  })
 }

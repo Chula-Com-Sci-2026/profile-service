@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { sql } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
-import type { Hono } from 'hono'
+import { Hono } from 'hono'
 import pg from 'pg'
 import { pino } from 'pino'
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest'
@@ -13,6 +13,8 @@ import { updateProfile } from '../../src/application/update-profile.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
 import { createApp } from '../../src/interface/http/app.ts'
 import type { Env } from '../../src/interface/http/context.ts'
+import { contractDocument } from '../../src/interface/http/docs.ts'
+import { errorHandler } from '../../src/interface/http/error-handler.ts'
 import { documentedResponses, exercised, expectContract } from './contract.ts'
 import { anIdentity, type Identity } from './identity.ts'
 
@@ -543,6 +545,16 @@ describe('the documentation', () => {
 
   it('hands over the document itself without a token', async () => {
     await expectContract('contract', 200, await app.request('/openapi.yaml'))
+  })
+
+  it('answers a problem when the contract is missing from the image', async () => {
+    // The Dockerfile has to COPY docs/openapi.yaml; nothing else proves what happens if it
+    // does not. Handing the handler a path that is not there is the only reachable version
+    // of that failure, and openapi.yaml documents a default for exactly this.
+    const missing = new Hono<Env>()
+    missing.onError(errorHandler(pino({ level: 'silent' })))
+    missing.get('/openapi.yaml', contractDocument('/no/such/openapi.yaml'))
+    await expectContract('contract', 500, await missing.request('/openapi.yaml'))
   })
 
   it('serves the document this service was actually built from', async () => {

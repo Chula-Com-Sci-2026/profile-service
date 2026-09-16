@@ -68,6 +68,9 @@ function responsePointer(operationId: string, status: number): string {
   return typeof ref === 'string' ? ref.slice(1) : pointer
 }
 
+/** The only media types allowed to carry no schema. Anything else missing one is a broken document. */
+const UNCONSTRAINED = new Set(['text/html', 'application/yaml'])
+
 const compiled = new Map<string, ValidateFunction>()
 function validator(pointer: string): ValidateFunction {
   const existing = compiled.get(pointer)
@@ -99,10 +102,18 @@ export async function expectContract(
   const mediaType = response.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
   expect(Object.keys(content), `media type for ${operationId} ${status}`).toContain(mediaType)
 
-  // A media type documented without a schema — `text/html: {}` — is a body this contract does
-  // not constrain, only promises. Ajv has nothing to check, and `response.json()` below would
-  // throw on it, so assert the promise that was actually made: there is a body.
+  // A rendered page and a YAML file have no useful schema, so the contract documents the media
+  // type and nothing else. Ajv has nothing to compile and `response.json()` would throw, so
+  // assert the only promise made: there is a body.
+  //
+  // Keyed on the media type, never on "no schema found". Keyed the other way, a typo in the
+  // document — `schena:` — makes every response schemaless and downgrades ~40 assertions to
+  // "not the empty string". Measured: the whole suite passed with Problem's schema misspelt.
   if ((content[mediaType] as Node | undefined)?.['schema'] === undefined) {
+    expect(
+      UNCONSTRAINED.has(mediaType),
+      `openapi.yaml documents ${mediaType} for ${operationId} ${status} with no schema`,
+    ).toBe(true)
     expect((await response.text()).length, `${operationId} ${status} body`).toBeGreaterThan(0)
     return
   }
