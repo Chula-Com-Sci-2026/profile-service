@@ -20,13 +20,18 @@ docker compose up
 
 That starts everything and the service listens on **http://localhost:3000**.
 
+Open **http://localhost:3000/docs** for the whole API, rendered and clickable. The service serves
+that page itself, so it always describes the version you are running — not a wiki someone
+forgot to update.
+
 ```bash
 curl http://localhost:3000/health   # {"status":"ok"}
 curl http://localhost:3000/ready    # {"status":"ready"}
 ```
 
 Profile endpoints answer **401** — they need a token from the Identity Service, and no Identity
-runs in this stack. `/health` and `/ready` are the two that work without one.
+runs in this stack. `/health`, `/ready`, `/docs` and `/openapi.yaml` are the four that work
+without one.
 
 So you cannot call the profile API from here yet. That is not a bug: this service verifies
 Identity's signature on every request and cannot mint a token for you, which is the point — it
@@ -49,13 +54,14 @@ endpoints actually get driven, tokens and all.
 | `GET` | `/openapi.yaml` | the contract itself, as a file |
 
 Everything under `/v1` needs a bearer token from Identity, and you may only *change* your own
-profile — reading anyone's is allowed. `/health` and `/ready` need no token.
+profile — reading anyone's is allowed. Nothing outside `/v1` needs a token.
 
 There is no way to list or search profiles. That is deliberate, and
 [docs/domain.md](docs/domain.md) §1 explains what it is waiting on.
 
-For statuses, request and response shapes, and the avatar handshake, read
-[docs/openapi.yaml](docs/openapi.yaml) — it is the contract, and the tests check the code
+For statuses, request and response shapes, and the avatar handshake, open `/docs` while the
+stack is up, or read [docs/openapi.yaml](docs/openapi.yaml) if you would rather have the file.
+They are the same document — the service serves that very file — and the tests check the code
 against it on every run.
 
 ## Work on it
@@ -150,7 +156,7 @@ Read them in this order. They are short.
 | | |
 |---|---|
 | [docs/domain.md](docs/domain.md) | **the spec, and it wins.** What a profile is and the rules it obeys |
-| [docs/openapi.yaml](docs/openapi.yaml) | the HTTP contract, derived from the spec. The tests check the code against it |
+| [docs/openapi.yaml](docs/openapi.yaml) | the HTTP contract, derived from the spec. The tests check the code against it, and the service renders it at `/docs` |
 | [docs/build_plan.md](docs/build_plan.md) | why things are the way they are, and what is deliberately not done yet |
 
 If the code and `domain.md` disagree, `domain.md` is right and the code is a bug.
