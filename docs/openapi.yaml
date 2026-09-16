@@ -3,20 +3,16 @@ openapi: 3.1.0
 info:
   title: Profile Service
   version: 1.0.0
-  summary: Runner profiles for Can't Run Alone.
   description: |
-    The HTTP contract for Profile Service. Derived from `domain.md`, which is
-    authoritative: this file maps its four operations onto one resource, and adds
-    two operational endpoints the model knows nothing about, and the avatar upload
-    handshake, which exists because the image lives in object storage rather than here.
+    Creating and changing a profile is one resource. The avatar is a two-step handshake,
+    because the image lives in object storage rather than here.
 
-    The Identity Service assigns the `userId`, so a client knows the URI before
-    the profile exists — which is why creation is a `PUT` rather than a `POST`
-    to a collection. There is no collection: profiles cannot be listed or
-    searched (domain.md §3).
+    Identity assigns the `userId`, so a client knows the URI before the profile exists —
+    which is why creation is a `PUT`, not a `POST` to a collection. There is no
+    collection: profiles cannot be listed or searched.
 
-    Text fields are trimmed before the length rules apply, so a value of only
-    whitespace is rejected as empty.
+    Text fields are trimmed before their length rules apply, so whitespace alone counts
+    as empty.
 
 security:
   - bearerAuth: []
