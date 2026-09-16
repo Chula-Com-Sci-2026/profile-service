@@ -33,6 +33,16 @@ const app = createApp({
   readiness: { isDraining: () => false, canServe: () => Promise.resolve(true) },
 })
 
+/**
+ * The one route that is served but not a contract operation: Swagger UI's own JavaScript and
+ * CSS. It is a file server, so there is nothing for a client to call and nothing to document —
+ * `/docs` and `/openapi.yaml` themselves are in the contract like every other endpoint.
+ *
+ * Kept as a list rather than a filter so it cannot quietly grow: every entry is a route no
+ * client can rely on, and adding one should feel like an admission.
+ */
+const NOT_CONTRACT_OPERATIONS = ['GET /docs/{asset}']
+
 /** Hono writes parameters as `:userId`; the contract writes them as `{userId}`. */
 const served = new Set(
   app.routes
@@ -54,11 +64,20 @@ describe('the routes the app serves are the paths the contract publishes', () =>
   })
 
   it('declares everything the app serves', () => {
-    expect([...served].filter((operation) => !declared.has(operation)).sort()).toEqual([])
+    expect(
+      [...served]
+        .filter((operation) => !NOT_CONTRACT_OPERATIONS.includes(operation))
+        .filter((operation) => !declared.has(operation))
+        .sort(),
+    ).toEqual([])
+  })
+
+  it('serves every route it exempts, so a stale exemption cannot hide a deleted route', () => {
+    expect(NOT_CONTRACT_OPERATIONS.filter((operation) => !served.has(operation))).toEqual([])
   })
 
   it('found routes at all, so a change in how Hono reports them cannot empty this test', () => {
-    expect(served.size).toBe(declared.size)
+    expect(served.size).toBe(declared.size + NOT_CONTRACT_OPERATIONS.length)
     expect(served.size).toBeGreaterThan(5)
   })
 })

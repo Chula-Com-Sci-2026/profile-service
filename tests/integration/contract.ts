@@ -99,6 +99,14 @@ export async function expectContract(
   const mediaType = response.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
   expect(Object.keys(content), `media type for ${operationId} ${status}`).toContain(mediaType)
 
+  // A media type documented without a schema — `text/html: {}` — is a body this contract does
+  // not constrain, only promises. Ajv has nothing to check, and `response.json()` below would
+  // throw on it, so assert the promise that was actually made: there is a body.
+  if ((content[mediaType] as Node | undefined)?.['schema'] === undefined) {
+    expect((await response.text()).length, `${operationId} ${status} body`).toBeGreaterThan(0)
+    return
+  }
+
   const validate = validator(`${pointer}/content/${escape(mediaType)}/schema`)
   const body: unknown = await response.json()
   if (!validate(body)) {

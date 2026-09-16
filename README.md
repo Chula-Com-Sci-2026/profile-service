@@ -45,6 +45,8 @@ endpoints actually get driven, tokens and all.
 | `POST` | `/v1/profiles/{userId}/avatar-uploads` | create an upload — returns a URL to PUT the image to |
 | `GET` | `/health` | is the process alive? |
 | `GET` | `/ready` | should traffic come here? |
+| `GET` | `/docs` | this API, rendered in the browser |
+| `GET` | `/openapi.yaml` | the contract itself, as a file |
 
 Everything under `/v1` needs a bearer token from Identity, and you may only *change* your own
 profile — reading anyone's is allowed. `/health` and `/ready` need no token.

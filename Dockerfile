@@ -30,6 +30,10 @@ COPY --from=build /app/dist ./dist
 # differently, rather than a second thing to keep in step.
 COPY drizzle ./drizzle
 
+# /docs and /openapi.yaml serve this file, so the image needs it. Swagger UI's own assets come
+# from swagger-ui-dist, which `npm ci --omit=dev` installed above because it is a dependency.
+COPY docs/openapi.yaml ./docs/openapi.yaml
+
 # The official image provides this user; nothing here needs root.
 USER node
 

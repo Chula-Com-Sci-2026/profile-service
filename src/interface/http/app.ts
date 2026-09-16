@@ -7,6 +7,7 @@ import type { GetProfile } from '../../application/get-profile.ts'
 import type { UpdateProfile } from '../../application/update-profile.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
 import type { Env } from './context.ts'
+import { contractDocument, documentationAsset, documentationPage } from './docs.ts'
 import { errorHandler, notFoundHandler } from './error-handler.ts'
 import { MalformedBodyError } from './errors.ts'
 import { ownsTheProfile } from './ownership.ts'
@@ -83,6 +84,12 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
     const serving = await readiness.canServe().catch(() => false)
     return serving ? c.json({ status: 'ready' }) : c.json({ status: 'unavailable' }, 503)
   })
+
+  // The contract, served by the service it describes — outside /v1 because it is not a profile
+  // operation, and open because a token cannot be minted without an Identity to mint it.
+  app.get('/docs', documentationPage)
+  app.get('/docs/:asset', documentationAsset)
+  app.get('/openapi.yaml', contractDocument)
 
   app.put(PROFILE, ownsTheProfile(), async (c) => {
     const body = profileWrite.parse(await jsonBody(c))

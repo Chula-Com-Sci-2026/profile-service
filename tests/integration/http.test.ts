@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { sql } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import type { Hono } from 'hono'
@@ -532,6 +533,38 @@ describe('POST /v1/profiles/{userId}/avatar-uploads — createAvatarUpload', () 
 
   it('404 when there is no profile to attach one to', async () => {
     await expectContract('createAvatarUpload', 404, await ask(BEAM))
+  })
+})
+
+describe('the documentation', () => {
+  it('renders the contract without a token', async () => {
+    await expectContract('documentation', 200, await app.request('/docs'))
+  })
+
+  it('hands over the document itself without a token', async () => {
+    await expectContract('contract', 200, await app.request('/openapi.yaml'))
+  })
+
+  it('serves the document this service was actually built from', async () => {
+    const served = await (await app.request('/openapi.yaml')).text()
+    expect(served).toBe(readFileSync('docs/openapi.yaml', 'utf8'))
+  })
+
+  it('serves Swagger UI from the image, so the page needs no network', async () => {
+    const script = await app.request('/docs/swagger-ui-bundle.js')
+    expect(script.status).toBe(200)
+    expect(script.headers.get('content-type')).toContain('javascript')
+    expect((await script.text()).length).toBeGreaterThan(100_000)
+  })
+
+  it('names no CDN in the page it serves', async () => {
+    expect(await (await app.request('/docs')).text()).not.toMatch(/https?:\/\//)
+  })
+
+  it('refuses to serve anything but the assets it allows', async () => {
+    for (const path of ['/docs/package.json', '/docs/..%2F..%2Fpackage.json', '/docs/index.html']) {
+      expect((await app.request(path)).status, path).toBe(404)
+    }
   })
 })
 
