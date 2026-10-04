@@ -9,7 +9,7 @@ A demonstration of microservices + DDD, so architectural clarity outranks clever
 |---|---|
 | `docs/domain.md` | **authoritative.** What a profile is and the rules it obeys. If code disagrees, the code is the bug |
 | `docs/openapi.yaml` | the HTTP contract, derived from the spec. Tests check the code against it. The service renders it at `/docs` and serves the file at `/openapi.yaml` |
-| `docs/build_plan.md` | **Decisions taken** (13) and **Deferred on purpose** (7). Settled — do not re-litigate or report as findings |
+| `docs/build_plan.md` | **Decisions taken** (14) and **Deferred on purpose** (7). Settled — do not re-litigate or report as findings |
 | `README.md` | how a human runs it |
 
 ## Commands
@@ -44,7 +44,8 @@ green. Never generate the spec from the code.
 
 ## Documents are tested
 
-Four tests fail when a document drifts from the code: `tests/integration/contract.ts` (responses),
+Five tests fail when a document drifts from the code: `tests/integration/contract.ts` (responses),
+`tests/unit/infrastructure/profile-published-language.test.ts` (events ↔ `webhooks`),
 `tests/unit/interface/routes-match-contract.test.ts` (paths), `readme-endpoints.test.ts` (README
 table), `tests/unit/infrastructure/env-example.test.ts` (`.env.example` ↔ `config.ts`).
 When one fails, the document is usually what needs fixing — not the test.
