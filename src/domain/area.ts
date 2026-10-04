@@ -7,8 +7,8 @@ export class Area {
 
   constructor(latitude: number, longitude: number) {
     // NaN fails both comparisons, and so does an infinity, so the range is the whole check.
-    ensure(latitude >= -90 && latitude <= 90, 'area', 'latitude must be between -90 and 90')
-    ensure(longitude >= -180 && longitude <= 180, 'area', 'longitude must be between -180 and 180')
+    ensure(latitude >= -90 && latitude <= 90, 'area', 'must have a latitude between -90 and 90')
+    ensure(longitude >= -180 && longitude <= 180, 'area', 'must have a longitude between -180 and 180')
     this.latitude = latitude
     this.longitude = longitude
     Object.freeze(this)

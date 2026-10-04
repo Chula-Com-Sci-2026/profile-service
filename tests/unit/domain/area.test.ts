@@ -38,6 +38,11 @@ describe('Area — §4: latitude −90 to 90, longitude −180 to 180, in degree
     expect(() => new Area(91, 0)).toThrow(expect.objectContaining({ field: 'area' }))
   })
 
+  it('says which coordinate is off the map, in a sentence about the area', () => {
+    expect(() => new Area(91, 0)).toThrow('area must have a latitude between -90 and 90')
+    expect(() => new Area(0, 181)).toThrow('area must have a longitude between -180 and 180')
+  })
+
   it('is compared by value, not identity', () => {
     expect(new Area(13.7314, 100.5414).equals(new Area(13.7314, 100.5414))).toBe(true)
     expect(new Area(13.7314, 100.5414).equals(new Area(13.7314, 100.5415))).toBe(false)
