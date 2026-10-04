@@ -70,6 +70,10 @@ npm run dev                                       # restarts on save, readable l
 
 Run that once; after it, `npm run dev` is the whole loop.
 
+If `npm run db:migrate` fails after a pull because a new required column meets rows already
+there, throw the database away — it is disposable — with `npm run db:reset`, then repeat the
+`docker compose up`, `db:migrate` and `db:seed` lines above.
+
 **Port 3000 has one owner** — the container, or `npm run dev`. Stop one before starting the
 other; that is what the first line does, and it is a no-op if nothing was running. Skip it and
 you get `EADDRINUSE`.
