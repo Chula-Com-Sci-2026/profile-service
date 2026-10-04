@@ -226,9 +226,12 @@ webhooks:
         change is saved, and awaited — a synchronous call, not a broker. `data` is the profile as
         another runner sees it, the area only as its cell. Each attempt has a 1 s timeout; three
         attempts, retried on a network error, a timeout, 408, 429 or 5xx, not on any other 4xx.
-        A subscriber still down after them loses the event (ADR-0019). Deduplicate by `id`; keep
-        the snapshot with the latest `time` per `subject`. A breaking change to `data` moves
-        `dataschema` to `:2`; an added optional field does not.
+        A subscriber still down after them loses the event (ADR-0019). Deduplicate by `id`. Order
+        by `time` per `subject`, ProfileDeleted included: keep the latest event for each runner,
+        and on ProfileDeleted keep a tombstone — the subject and its `time` — so a retried
+        ProfileUpdated older than the deletion is ignored, while a newer one (the runner made a
+        profile again) replaces it. Equal times are applied in arrival order. A breaking change to
+        `data` moves `dataschema` to `:2`; an added optional field does not.
       security:
         - serviceToken: []
       parameters:
@@ -250,7 +253,8 @@ webhooks:
       summary: A profile was removed
       description: >-
         Sent like ProfileUpdated, after a profile is removed. It carries no `data`; `subject`
-        names the runner. Drop the candidate.
+        names the runner. Drop the candidate, and keep a tombstone with this `time` so a late
+        ProfileUpdated cannot bring it back (see ProfileUpdated).
       security:
         - serviceToken: []
       parameters:
