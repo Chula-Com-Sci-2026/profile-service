@@ -4,9 +4,12 @@ import { sql } from 'drizzle-orm'
 import { createProfile } from '../src/application/create-profile.ts'
 import type { AvatarStorage } from '../src/application/ports/avatar-storage.ts'
 import { updateProfile } from '../src/application/update-profile.ts'
-import { loadDatabaseUrl, loadObjectStorage } from '../src/infrastructure/config.ts'
+import type { Profile } from '../src/domain/profile.ts'
+import { loadDatabaseUrl, loadEventPublishing, loadObjectStorage } from '../src/infrastructure/config.ts'
 import { createDatabase } from '../src/infrastructure/database.ts'
 import { DrizzleProfileRepository } from '../src/infrastructure/drizzle-profile-repository.ts'
+import { httpProfileEvents } from '../src/infrastructure/http-profile-events.ts'
+import { identityServiceTokens } from '../src/infrastructure/identity-service-tokens.ts'
 import { createAvatarStorage } from '../src/infrastructure/minio-avatar-storage.ts'
 import { silentProfileEvents } from '../src/infrastructure/silent-profile-events.ts'
 import { toFields } from '../src/interface/http/profile-input.ts'
@@ -41,8 +44,32 @@ const avatars: AvatarStorage = createAvatarStorage(loadObjectStorage())
 const repository = new DrizzleProfileRepository(database.db)
 
 
-/** Silent for now; the events task makes the seed publish what it loads. */
+/**
+ * The rows go in under a transaction, and an event must not leave before its change is
+ * committed — so inserts publish nothing, and each runner is published once the transaction
+ * commits. A runner with an avatar is published again by `updateProfile`; snapshots make that
+ * harmless.
+ */
 const quiet = { events: silentProfileEvents, onUndelivered: () => {} }
+const eventSettings = loadEventPublishing()
+const publishing = {
+  events:
+    eventSettings === undefined
+      ? silentProfileEvents
+      : httpProfileEvents({
+          subscribers: eventSettings.subscribers,
+          tokens: identityServiceTokens({
+            tokenUrl: eventSettings.identityTokenUrl,
+            clientId: eventSettings.clientId,
+            clientSecret: eventSettings.clientSecret,
+          }),
+          currentRequestId: () => undefined,
+        }),
+  onUndelivered: (userId: string, error: unknown) => {
+    console.error(`the event for ${userId} was not delivered:`, error instanceof Error ? error.message : error)
+  },
+}
+const seeded: Profile[] = []
 
 /** Upload the bytes to the presigned URL, then record the key it minted. */
 async function attachAvatar(userId: string): Promise<string | undefined> {
@@ -57,7 +84,7 @@ async function attachAvatar(userId: string): Promise<string | undefined> {
 
   await updateProfile(repository, avatars, (id, error) => {
     console.error(`an avatar object was orphaned for ${id}:`, error)
-  }, quiet)(userId, { avatarRef })
+  }, publishing)(userId, { avatarRef })
   return avatarRef
 }
 
@@ -79,9 +106,14 @@ try {
         throw new Error(`a runner in seed.json has no userId: ${JSON.stringify(entry)}`)
       }
       const profile = await insert(toFields(userId, profileWrite.parse(body)))
+      seeded.push(profile)
       console.log(`seeded  ${profile.userId}  ${profile.displayName}`)
     }
   })
+
+  for (const profile of seeded) {
+    await publishing.events.updated(profile).catch((error: unknown) => publishing.onUndelivered(profile.userId, error))
+  }
 
   for (const entry of entries as { userId: string; displayName: string }[]) {
     const avatarRef = await attachAvatar(entry.userId)

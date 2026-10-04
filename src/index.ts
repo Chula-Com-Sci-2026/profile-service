@@ -10,10 +10,13 @@ import { updateProfile } from './application/update-profile.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
+import { httpProfileEvents } from './infrastructure/http-profile-events.ts'
+import { identityServiceTokens } from './infrastructure/identity-service-tokens.ts'
 import { createAvatarStorage } from './infrastructure/minio-avatar-storage.ts'
 import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
 import { createApp } from './interface/http/app.ts'
 import { remoteIdentityKeys } from './interface/http/authentication.ts'
+import { currentRequestId } from './interface/http/request-context.ts'
 
 /**
  * The composition root — the one file that knows every layer exists.
@@ -38,10 +41,28 @@ const repository = new DrizzleProfileRepository(database.db)
 const avatars = createAvatarStorage(config.objectStorage)
 
 
-/** Silent until profile events are configured (the next commits wire the HTTP publisher). */
+/**
+ * Profile events to Buddy Discovery (ADR-0019): REST now, a broker later, behind one port.
+ * Off while no subscriber is configured, so a clone runs with nobody to tell.
+ */
+const events =
+  config.events === undefined
+    ? silentProfileEvents
+    : httpProfileEvents({
+        subscribers: config.events.subscribers,
+        tokens: identityServiceTokens({
+          tokenUrl: config.events.identityTokenUrl,
+          clientId: config.events.clientId,
+          clientSecret: config.events.clientSecret,
+        }),
+        currentRequestId,
+      })
+if (config.events === undefined) logger.info('no EVENT_SUBSCRIBERS configured: profile events are not published')
+
 const publishing: Publishing = {
-  events: silentProfileEvents,
+  events,
   onUndelivered: (userId, error) => {
+    // The error names the event, the subscriber and the request id — never the profile.
     logger.error({ err: error, userId }, 'a profile event was not delivered')
   },
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadConfig, loadDatabaseUrl } from '../../../src/infrastructure/config.ts'
+import { loadConfig, loadDatabaseUrl, loadEventPublishing } from '../../../src/infrastructure/config.ts'
 
 const complete = {
   DATABASE_URL: 'postgres://profile:profile@localhost:5432/profile',
@@ -113,5 +113,50 @@ describe('loadDatabaseUrl', () => {
 
   it('still refuses without one', () => {
     expect(() => loadDatabaseUrl({})).toThrow(/DATABASE_URL/)
+  })
+})
+
+describe('loadConfig — profile events', () => {
+  const publishing = {
+    EVENT_SUBSCRIBERS: 'http://discovery:4100/internal/events',
+    IDENTITY_TOKEN_URL: 'http://identity:4000/oauth/token',
+    SERVICE_CLIENT_ID: 'profile-service',
+    SERVICE_CLIENT_SECRET: 'secret',
+  }
+
+  it('is off when no subscriber is listed — a clone runs with no Buddy Discovery', () => {
+    expect(loadConfig(complete).events).toBeUndefined()
+  })
+
+  it('reads the subscribers and Identity credentials once a subscriber is listed', () => {
+    expect(loadConfig({ ...complete, ...publishing }).events).toEqual({
+      subscribers: ['http://discovery:4100/internal/events'],
+      identityTokenUrl: 'http://identity:4000/oauth/token',
+      clientId: 'profile-service',
+      clientSecret: 'secret',
+    })
+  })
+
+  it('trims each subscriber and drops empty entries', () => {
+    const events = loadConfig({ ...complete, ...publishing, EVENT_SUBSCRIBERS: ' http://a.test/e , ,http://b.test/e ' }).events
+    expect(events?.subscribers).toEqual(['http://a.test/e', 'http://b.test/e'])
+  })
+
+  it('requires the token URL and credentials once a subscriber is listed, all named at once', () => {
+    expect(() => loadConfig({ ...complete, EVENT_SUBSCRIBERS: publishing.EVENT_SUBSCRIBERS })).toThrow(
+      /IDENTITY_TOKEN_URL is required when EVENT_SUBSCRIBERS is set; SERVICE_CLIENT_ID is required when EVENT_SUBSCRIBERS is set; SERVICE_CLIENT_SECRET is required when EVENT_SUBSCRIBERS is set/,
+    )
+  })
+
+  it('refuses a subscriber that is not a URL', () => {
+    expect(() => loadConfig({ ...complete, ...publishing, EVENT_SUBSCRIBERS: 'discovery' })).toThrow(
+      /EVENT_SUBSCRIBERS must list URLs, not "discovery"/,
+    )
+  })
+
+  it('is loadable on its own, for the seed', () => {
+    expect(loadEventPublishing({})).toBeUndefined()
+    expect(loadEventPublishing(publishing)?.clientId).toBe('profile-service')
+    expect(() => loadEventPublishing({ EVENT_SUBSCRIBERS: publishing.EVENT_SUBSCRIBERS })).toThrow(/IDENTITY_TOKEN_URL is required/)
   })
 })
