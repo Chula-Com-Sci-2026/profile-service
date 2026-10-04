@@ -422,7 +422,11 @@ components:
         id:              { type: string, minLength: 1, description: Unique per event. Deduplicate by it. }
         source:          { const: profile-service }
         type:            { type: string }
-        time:            { type: string, minLength: 1, description: When the change was saved. RFC 3339, UTC. }
+        time:
+          type: string
+          # A pattern rather than `format: date-time`, which the contract tests' Ajv ignores.
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$'
+          description: When the change was saved. RFC 3339, UTC, e.g. 2026-10-04T11:20:00.000Z.
         subject:         { type: string, minLength: 1, maxLength: 64, description: The runner's userId. }
         datacontenttype: { const: application/json }
         dataschema:      { type: string, minLength: 1, description: Names the shape of `data` and its version. }

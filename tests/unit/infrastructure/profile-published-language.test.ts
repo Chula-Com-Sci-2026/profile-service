@@ -4,6 +4,8 @@ import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 import { Area } from '../../../src/domain/area.ts'
 import { Pace } from '../../../src/domain/pace.ts'
+import { PreferredRunTime } from '../../../src/domain/preferred-run-time.ts'
+import { Volume } from '../../../src/domain/volume.ts'
 import { PreferredDistance } from '../../../src/domain/preferred-distance.ts'
 import { Profile } from '../../../src/domain/profile.ts'
 import {
@@ -74,6 +76,30 @@ describe('ProfileUpdated', () => {
   it('obeys the ProfileUpdatedEvent schema in openapi.yaml', () => {
     const validate = schema('ProfileUpdatedEvent')
     expect(validate(profileUpdated(nok, at)), ajv.errorsText(validate.errors)).toBe(true)
+  })
+
+  it('obeys that schema with every optional field set, not only a sparse profile', () => {
+    const everything = new Profile({
+      userId: '7f3a9c2e15',
+      displayName: 'Nok',
+      bio: 'Chasing a sub-2 half.',
+      avatarRef: 'avatars/7f3a9c2e15/abc',
+      birthYear: 1994,
+      gender: 'female',
+      area: new Area(13.731723456, 100.541532),
+      pace: new Pace(330),
+      volume: new Volume(42_000),
+      experience: 'intermediate',
+      preferredDistances: [new PreferredDistance('10k'), new PreferredDistance('half_marathon')],
+      preferredRunTimes: [new PreferredRunTime('tue', 'early_morning')],
+    })
+    const validate = schema('ProfileUpdatedEvent')
+    expect(validate(profileUpdated(everything, at)), ajv.errorsText(validate.errors)).toBe(true)
+  })
+
+  it('is refused by that schema when `time` is not an RFC 3339 UTC timestamp', () => {
+    expect(schema('ProfileUpdatedEvent')({ ...profileUpdated(nok, at), time: 'not-a-date' })).toBe(false)
+    expect(schema('ProfileUpdatedEvent')({ ...profileUpdated(nok, at), time: '2026-10-04 11:20' })).toBe(false)
   })
 
   it('is refused by that schema if an exact area ever slips in', () => {
