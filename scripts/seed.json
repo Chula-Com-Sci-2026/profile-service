@@ -2,7 +2,11 @@
   {
     "userId": "7f3a9c2e15",
     "displayName": "Nok",
-    "birthYear": 1998
+    "birthYear": 1998,
+    "area": {
+      "latitude": 13.729,
+      "longitude": 100.559
+    }
   },
   {
     "userId": "b41d8e0a63",
@@ -10,7 +14,10 @@
     "birthYear": 1994,
     "bio": "Slow miles, long talks. Usually at the park before work.",
     "gender": "non_binary",
-    "area": "lumphini",
+    "area": {
+      "latitude": 13.7314,
+      "longitude": 100.5414
+    },
     "experience": "intermediate",
     "pace": 330,
     "volume": 42000,
@@ -38,7 +45,10 @@
     "displayName": "Ploy",
     "birthYear": 1991,
     "gender": "female",
-    "area": "benchakitti",
+    "area": {
+      "latitude": 13.729,
+      "longitude": 100.559
+    },
     "experience": "advanced",
     "pace": 245,
     "volume": 95000,
@@ -58,7 +68,10 @@
     "displayName": "Bank",
     "birthYear": 2003,
     "gender": "male",
-    "area": "chatuchak",
+    "area": {
+      "latitude": 13.803,
+      "longitude": 100.553
+    },
     "experience": "beginner",
     "pace": 600,
     "volume": 8000,
@@ -81,7 +94,10 @@
     "displayName": "Ann",
     "birthYear": 1987,
     "bio": "Night owl. Happy to pace anyone.",
-    "area": "lumphini",
+    "area": {
+      "latitude": 13.7314,
+      "longitude": 100.5414
+    },
     "experience": "advanced",
     "pace": 300,
     "volume": 60000,

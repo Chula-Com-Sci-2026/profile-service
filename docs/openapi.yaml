@@ -51,6 +51,9 @@ paths:
     get:
       operationId: getProfile
       summary: Read a runner's profile
+      description: >-
+        Any runner may read any profile. Only its owner receives `area`, the exact point;
+        every caller receives `areaCell`.
       responses:
         '200': { $ref: '#/components/responses/Profile' }
         '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
@@ -220,8 +223,9 @@ components:
       description: >-
         A JWT issued by the Identity Service and verified locally on every request — not
         trusted because a gateway forwarded it. Its subject is the caller's `userId`, and the
-        403 responses below compare it against the `userId` in the path. Ownership is an access
-        rule of this contract; domain.md is silent on who may act.
+        403 responses below compare it against the `userId` in the path. The same comparison
+        decides whether a profile is returned with its exact `area` or with `areaCell` alone.
+        Ownership is an access rule of this contract; domain.md is silent on who may act.
 
   responses:
     Profile:
@@ -264,17 +268,22 @@ components:
       description: >-
         What a response always contains. `required` here means present on the wire,
         not that the runner had to answer — see `ProfileWrite` for what a client must send.
+        `area` is present only for the profile's owner; `areaCell` is present for everyone,
+        and is not writable.
       allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
-      required: [userId, displayName, birthYear, preferredDistances, preferredRunTimes]
+      required: [userId, displayName, birthYear, areaCell, preferredDistances, preferredRunTimes]
       unevaluatedProperties: false
       properties:
-        userId: { type: string, minLength: 1, maxLength: 64 }
+        userId:   { type: string, minLength: 1, maxLength: 64 }
+        areaCell: { $ref: '#/components/schemas/AreaCell' }
 
     ProfilePatch:
       description: >-
         A merge patch (RFC 7396). An absent key is untouched; null clears the field.
-        `displayName` and `birthYear` cannot be cleared — a profile cannot exist without
-        them. A set is replaced by sending a new array, never by sending null.
+        `displayName`, `birthYear` and `area` cannot be cleared — a profile cannot exist
+        without them. A set is replaced by sending a new array, never by sending null.
+        An area is replaced whole, both coordinates every time, rather than merged member
+        by member as RFC 7396 would: half a moved pin means nothing.
       type: object
       unevaluatedProperties: false
       properties:
@@ -283,7 +292,7 @@ components:
         bio:         { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/bio' },        { type: 'null' }] }
         avatarRef:   { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/avatarRef' },  { type: 'null' }] }
         gender:      { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/gender' },     { type: 'null' }] }
-        area:        { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/area' },       { type: 'null' }] }
+        area:        { $ref: '#/components/schemas/ProfileFields/properties/area' }
         experience:  { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/experience' }, { type: 'null' }] }
         pace:        { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/pace' },       { type: 'null' }] }
         volume:      { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/volume' },     { type: 'null' }] }
@@ -293,13 +302,27 @@ components:
     ProfileWrite:
       description: No `userId` in the body — it is the path parameter.
       allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
-      required: [displayName, birthYear]
+      required: [displayName, birthYear, area]
       unevaluatedProperties: false
 
     Gender:     { type: string, enum: [male, female, non_binary] }
-    Area:       { type: string, enum: [lumphini, benchakitti, chatuchak] }
     Experience: { type: string, enum: [beginner, intermediate, advanced] }
     Distance:   { type: string, enum: ['5k', '10k', half_marathon, marathon] }
+
+    Area:
+      type: object
+      description: Where a runner usually runs. Degrees, WGS 84.
+      additionalProperties: false
+      required: [latitude, longitude]
+      properties:
+        latitude:  { type: number, minimum: -90,  maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+
+    AreaCell:
+      description: >-
+        The area as other runners see it: the point nearest it whose coordinates are
+        multiples of 0.01° (about 1.1 km across in Bangkok).
+      allOf: [{ $ref: '#/components/schemas/Area' }]
 
     RunTime:
       type: object

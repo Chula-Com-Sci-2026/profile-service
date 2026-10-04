@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { Area } from '../../../src/domain/area.ts'
 import { InvalidProfileFieldError } from '../../../src/domain/errors.ts'
 import { Pace } from '../../../src/domain/pace.ts'
 import { PreferredDistance } from '../../../src/domain/preferred-distance.ts'
@@ -12,6 +13,7 @@ function aProfile(overrides: Partial<ProfileFields> = {}): Profile {
     userId: '7f3a9c2e15',
     displayName: 'Nok',
     birthYear: 1994,
+    area: new Area(13.7314, 100.5414),
     preferredDistances: [],
     preferredRunTimes: [],
     ...overrides,
@@ -21,9 +23,10 @@ function aProfile(overrides: Partial<ProfileFields> = {}): Profile {
 const thisYear = new Date().getFullYear()
 
 describe('Profile — required fields', () => {
-  it('needs only displayName and birthYear beyond the identity', () => {
+  it('needs displayName, birthYear and area beyond the identity', () => {
     const profile = aProfile()
     expect(profile.userId).toBe('7f3a9c2e15')
+    expect(profile.area.equals(new Area(13.7314, 100.5414))).toBe(true)
     expect(profile.bio).toBeUndefined()
     expect(profile.preferredDistances).toEqual([])
   })
@@ -79,8 +82,10 @@ describe('Profile — optional fields', () => {
     expect(() => aProfile({ gender: gender as never })).toThrow(InvalidProfileFieldError)
   })
 
-  it.each(['sukhumvit', ''])('rejects %p as an area', (area) => {
-    expect(() => aProfile({ area: area as never })).toThrow(InvalidProfileFieldError)
+  it('holds the area as a value object that knows its cell', () => {
+    const profile = aProfile({ area: new Area(13.803, 100.553) })
+    expect(profile.area).toBeInstanceOf(Area)
+    expect(profile.area.cell()).toMatchObject({ latitude: 13.8, longitude: 100.55 })
   })
 
   it.each(['expert', ''])('rejects %p as an experience', (experience) => {

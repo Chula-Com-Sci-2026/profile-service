@@ -1,4 +1,4 @@
-import { toArea } from '../../domain/area.ts'
+import { Area } from '../../domain/area.ts'
 import { toExperience } from '../../domain/experience.ts'
 import { toGender } from '../../domain/gender.ts'
 import { Pace } from '../../domain/pace.ts'
@@ -20,12 +20,12 @@ export function toFields(userId: string, body: ProfileWriteBody): ProfileFields 
     userId,
     displayName: body.displayName,
     birthYear: body.birthYear,
+    area: new Area(body.area.latitude, body.area.longitude),
     preferredDistances: (body.preferredDistances ?? []).map((d) => new PreferredDistance(d)),
     preferredRunTimes: (body.preferredRunTimes ?? []).map((t) => new PreferredRunTime(t.dayOfWeek, t.timeOfDay)),
     ...(body.bio !== undefined && { bio: body.bio }),
     ...(body.avatarRef !== undefined && { avatarRef: body.avatarRef }),
     ...(body.gender !== undefined && { gender: toGender(body.gender) }),
-    ...(body.area !== undefined && { area: toArea(body.area) }),
     ...(body.pace !== undefined && { pace: new Pace(body.pace) }),
     ...(body.volume !== undefined && { volume: new Volume(body.volume) }),
     ...(body.experience !== undefined && { experience: toExperience(body.experience) }),
@@ -40,7 +40,7 @@ export function toChanges(body: ProfilePatchBody): ProfileChanges {
     ...(body.bio !== undefined && { bio: body.bio }),
     ...(body.avatarRef !== undefined && { avatarRef: body.avatarRef }),
     ...(body.gender !== undefined && { gender: body.gender === null ? null : toGender(body.gender) }),
-    ...(body.area !== undefined && { area: body.area === null ? null : toArea(body.area) }),
+    ...(body.area !== undefined && { area: new Area(body.area.latitude, body.area.longitude) }),
     ...(body.pace !== undefined && { pace: body.pace === null ? null : new Pace(body.pace) }),
     ...(body.volume !== undefined && { volume: body.volume === null ? null : new Volume(body.volume) }),
     ...(body.experience !== undefined && {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { Area } from '../../../src/domain/area.ts'
 import { InvalidProfileFieldError } from '../../../src/domain/errors.ts'
 import { Pace } from '../../../src/domain/pace.ts'
 import { PreferredDistance } from '../../../src/domain/preferred-distance.ts'
@@ -11,7 +12,7 @@ function aProfile(): Profile {
     bio: 'Chasing a sub-2 half.',
     birthYear: 1994,
     gender: 'female',
-    area: 'lumphini',
+    area: new Area(13.7314, 100.5414),
     pace: new Pace(330),
     preferredDistances: [new PreferredDistance('10k')],
     preferredRunTimes: [],
@@ -25,7 +26,7 @@ describe('Profile.update — an absent key leaves the field alone', () => {
     expect(after.displayName).toBe('Nok')
     expect(after.bio).toBe('Chasing a sub-2 half.')
     expect(after.pace?.secondsPerKilometre).toBe(330)
-    expect(after.area).toBe('lumphini')
+    expect(after.area.equals(new Area(13.7314, 100.5414))).toBe(true)
   })
 
   it('touches only what it was given', () => {
@@ -48,10 +49,22 @@ describe('Profile.update — null clears', () => {
   })
 
   it('clears each optional field independently', () => {
-    const after = aProfile().update({ gender: null, area: null })
+    const after = aProfile().update({ gender: null, pace: null })
     expect(after.gender).toBeUndefined()
-    expect(after.area).toBeUndefined()
+    expect(after.pace).toBeUndefined()
     expect(after.bio).toBe('Chasing a sub-2 half.')
+  })
+})
+
+describe('Profile.update — an area is replaced, never cleared', () => {
+  it('takes a new area whole', () => {
+    const after = aProfile().update({ area: new Area(13.803, 100.553) })
+    expect(after.area.equals(new Area(13.803, 100.553))).toBe(true)
+  })
+
+  it('keeps the area when the change leaves it out', () => {
+    const after = aProfile().update({ displayName: 'Nok R.' })
+    expect(after.area.equals(new Area(13.7314, 100.5414))).toBe(true)
   })
 })
 

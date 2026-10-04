@@ -94,17 +94,21 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
   app.put(PROFILE, ownsTheProfile(), async (c) => {
     const body = profileWrite.parse(await jsonBody(c))
     const profile = await useCases.createProfile(toFields(c.req.param('userId'), body))
-    return c.json(toView(profile), 201)
+    return c.json(toView(profile, 'owner'), 201)
   })
 
+  // Reading is open to any runner; what they see is not. The comparison is ownsTheProfile's,
+  // but here it chooses a view instead of refusing.
   app.get(PROFILE, async (c) => {
-    return c.json(toView(await useCases.getProfile(c.req.param('userId'))))
+    const userId = c.req.param('userId')
+    const audience = c.get('caller').userId === userId ? 'owner' : 'others'
+    return c.json(toView(await useCases.getProfile(userId), audience))
   })
 
   app.patch(PROFILE, ownsTheProfile(), async (c) => {
     const body = profilePatch.parse(await jsonBody(c))
     const profile = await useCases.updateProfile(c.req.param('userId'), toChanges(body))
-    return c.json(toView(profile))
+    return c.json(toView(profile, 'owner'))
   })
 
   // The resource created here is the *permission*, not the avatar — which is why the path is

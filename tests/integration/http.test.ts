@@ -78,7 +78,9 @@ beforeEach(async () => {
   await db.execute(sql`TRUNCATE profiles`)
 })
 
-const minimal = { displayName: 'Nok', birthYear: 1994 }
+const minimal = { displayName: 'Nok', birthYear: 1994, area: { latitude: 13.7314, longitude: 100.5414 } }
+/** `minimal.area`'s cell. */
+const minimalCell = { latitude: 13.73, longitude: 100.54 }
 
 async function as(userId: string, path: string, init: RequestInit = {}): Promise<Response> {
   const token = await identity.tokenFor(userId)
@@ -109,6 +111,38 @@ describe('PUT /v1/profiles/{userId} — createProfile', () => {
 
     expect('bio' in body).toBe(false)
     expect(body['preferredDistances']).toEqual([])
+  })
+
+  it('201 answers the owner with the exact area and its cell', async () => {
+    const response = await put(NOK, { ...minimal, area: { latitude: 13.73172, longitude: 100.54153 } })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('createProfile', 201, response)
+
+    expect(body['area']).toEqual({ latitude: 13.73172, longitude: 100.54153 })
+    expect(body['areaCell']).toEqual({ latitude: 13.73, longitude: 100.54 })
+  })
+
+  it('400 when the area is missing — it is required', async () => {
+    await expectContract('createProfile', 400, await put(NOK, { displayName: 'Nok', birthYear: 1994 }))
+  })
+
+  it('400 when a coordinate is a string, not a number', async () => {
+    const area = { latitude: '13.7314', longitude: 100.5414 }
+    await expectContract('createProfile', 400, await put(NOK, { ...minimal, area }))
+  })
+
+  it('400 when the area carries a key the contract does not', async () => {
+    const area = { ...minimal.area, altitude: 2 }
+    await expectContract('createProfile', 400, await put(NOK, { ...minimal, area }))
+  })
+
+  it('400 when the body tries to write the cell — it is derived', async () => {
+    await expectContract('createProfile', 400, await put(NOK, { ...minimal, areaCell: minimalCell }))
+  })
+
+  it('422 when a coordinate is off the map', async () => {
+    const area = { latitude: 91, longitude: 100.5414 }
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, area }))
   })
 
   it('400 when the body has an unknown field', async () => {
@@ -173,6 +207,29 @@ describe('GET /v1/profiles/{userId} — getProfile', () => {
     await expectContract('getProfile', 200, await as(BEAM, `/v1/profiles/${NOK}`))
   })
 
+  it('200 shows the owner the exact area and its cell', async () => {
+    await givenAProfile()
+    const response = await as(NOK, `/v1/profiles/${NOK}`)
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('getProfile', 200, response)
+
+    expect(body['area']).toEqual(minimal.area)
+    expect(body['areaCell']).toEqual(minimalCell)
+  })
+
+  it('200 shows another runner the cell and never the exact area — NFR-4.1', async () => {
+    await givenAProfile()
+    const response = await as(BEAM, `/v1/profiles/${NOK}`)
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('getProfile', 200, response)
+
+    expect('area' in body).toBe(false)
+    expect(body['areaCell']).toEqual(minimalCell)
+    // Not just the key: the exact coordinates appear nowhere in what another runner receives.
+    expect(JSON.stringify(body)).not.toContain('13.7314')
+    expect(JSON.stringify(body)).not.toContain('100.5414')
+  })
+
   it('401 without a token', async () => {
     await expectContract('getProfile', 401, await app.request(`/v1/profiles/${NOK}`))
   })
@@ -208,6 +265,37 @@ describe('PATCH /v1/profiles/{userId} — updateProfile', () => {
     await expectContract('updateProfile', 200, response)
 
     expect('bio' in body).toBe(false)
+  })
+
+  it('200 moves the area, and the cell follows', async () => {
+    await givenAProfile()
+    const response = await patch(NOK, { area: { latitude: 13.803, longitude: 100.553 } })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('updateProfile', 200, response)
+
+    expect(body['area']).toEqual({ latitude: 13.803, longitude: 100.553 })
+    expect(body['areaCell']).toEqual({ latitude: 13.8, longitude: 100.55 })
+  })
+
+  it('another runner sees the moved cell, and still not the area', async () => {
+    await givenAProfile()
+    await patch(NOK, { area: { latitude: 13.803, longitude: 100.553 } })
+    const response = await as(BEAM, `/v1/profiles/${NOK}`)
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('getProfile', 200, response)
+
+    expect('area' in body).toBe(false)
+    expect(body['areaCell']).toEqual({ latitude: 13.8, longitude: 100.55 })
+  })
+
+  it('400 when the area is sent as null — it cannot be cleared', async () => {
+    await givenAProfile()
+    await expectContract('updateProfile', 400, await patch(NOK, { area: null }))
+  })
+
+  it('400 when only half of the area is sent — it is replaced whole', async () => {
+    await givenAProfile()
+    await expectContract('updateProfile', 400, await patch(NOK, { area: { latitude: 13.8 } }))
   })
 
   it('400 when the body has an unknown field', async () => {

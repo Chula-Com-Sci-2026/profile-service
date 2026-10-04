@@ -1,18 +1,4 @@
-import { ensure, InvalidProfileFieldError } from './errors.ts'
-
-/** The park names an area used to be. Retired by the next commit, when every layer takes the point. */
-export const AREAS = ['lumphini', 'benchakitti', 'chatuchak'] as const
-
-export type AreaName = (typeof AREAS)[number]
-
-export function isArea(value: unknown): value is AreaName {
-  return typeof value === 'string' && (AREAS as readonly string[]).includes(value)
-}
-
-export function toArea(value: string): AreaName {
-  if (!isArea(value)) throw new InvalidProfileFieldError('area', `must be one of ${AREAS.join(', ')}`)
-  return value
-}
+import { ensure } from './errors.ts'
 
 /** Where a runner usually runs, as one point on the map — domain.md §4: degrees, WGS 84. */
 export class Area {

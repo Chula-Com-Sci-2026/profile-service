@@ -13,6 +13,12 @@ const runTime = z.strictObject({
   timeOfDay: z.string(),
 })
 
+/** A point on the map: two numbers and nothing else. Whether they are *on* the map is §4's. */
+const point = z.strictObject({
+  latitude: z.number(),
+  longitude: z.number(),
+})
+
 /**
  * `uniqueItems: true` in openapi.yaml. Without this the domain quietly deduplicates and the
  * client gets a 201 describing a set it did not send — the server rewriting the request rather
@@ -43,7 +49,7 @@ export const profileWrite = z.strictObject({
   bio: z.string().optional(),
   avatarRef: z.string().optional(),
   gender: z.string().optional(),
-  area: z.string().optional(),
+  area: point,
   pace: z.number().optional(),
   volume: z.number().optional(),
   experience: z.string().optional(),
@@ -52,9 +58,10 @@ export const profileWrite = z.strictObject({
 })
 
 /**
- * `ProfilePatch` in openapi.yaml. A patch body is *not* the resource shape: seven fields accept
- * null to clear, `displayName` and `birthYear` do not — a profile cannot exist without them —
- * and a set is replaced by sending a new array, never by sending null.
+ * `ProfilePatch` in openapi.yaml. A patch body is *not* the resource shape: six fields accept
+ * null to clear, `displayName`, `birthYear` and `area` do not — a profile cannot exist without
+ * them — and a set is replaced by sending a new array, never by sending null. An area is
+ * replaced whole, so both coordinates are required here too.
  */
 export const profilePatch = z.strictObject({
   displayName: z.string().optional(),
@@ -62,7 +69,7 @@ export const profilePatch = z.strictObject({
   bio: z.string().nullable().optional(),
   avatarRef: z.string().nullable().optional(),
   gender: z.string().nullable().optional(),
-  area: z.string().nullable().optional(),
+  area: point.optional(),
   pace: z.number().nullable().optional(),
   volume: z.number().nullable().optional(),
   experience: z.string().nullable().optional(),

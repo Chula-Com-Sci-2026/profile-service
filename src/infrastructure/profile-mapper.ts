@@ -1,4 +1,4 @@
-import { toArea } from '../domain/area.ts'
+import { Area } from '../domain/area.ts'
 import { InvalidProfileFieldError } from '../domain/errors.ts'
 import { toExperience } from '../domain/experience.ts'
 import { toGender } from '../domain/gender.ts'
@@ -82,12 +82,12 @@ function buildProfile(row: ProfileRow): Profile {
     userId: row.userId,
     displayName: row.displayName,
     birthYear: row.birthYear,
+    area: new Area(row.areaLatitude, row.areaLongitude),
     preferredDistances: asDistances(row.preferredDistances),
     preferredRunTimes: asRunTimes(row.preferredRunTimes),
     ...(row.bio !== null && { bio: row.bio }),
     ...(row.avatarRef !== null && { avatarRef: row.avatarRef }),
     ...(row.gender !== null && { gender: toGender(row.gender) }),
-    ...(row.area !== null && { area: toArea(row.area) }),
     ...(row.pace !== null && { pace: new Pace(row.pace) }),
     ...(row.volume !== null && { volume: new Volume(row.volume) }),
     ...(row.experience !== null && { experience: toExperience(row.experience) }),
@@ -102,7 +102,8 @@ export function toRow(profile: Profile): ProfileInsert {
     avatarRef: profile.avatarRef ?? null,
     birthYear: profile.birthYear,
     gender: profile.gender ?? null,
-    area: profile.area ?? null,
+    areaLatitude: profile.area.latitude,
+    areaLongitude: profile.area.longitude,
     pace: profile.pace?.secondsPerKilometre ?? null,
     volume: profile.volume?.metresPerWeek ?? null,
     experience: profile.experience ?? null,

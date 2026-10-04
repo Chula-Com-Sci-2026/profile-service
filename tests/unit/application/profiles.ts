@@ -1,3 +1,4 @@
+import { Area } from '../../../src/domain/area.ts'
 import { Pace } from '../../../src/domain/pace.ts'
 import { PreferredDistance } from '../../../src/domain/preferred-distance.ts'
 import { Profile, type ProfileFields } from '../../../src/domain/profile.ts'
@@ -12,6 +13,7 @@ export function fieldsFor(overrides: Partial<ProfileFields> = {}): ProfileFields
     displayName: 'Nok',
     bio: 'Chasing a sub-2 half.',
     birthYear: 1994,
+    area: new Area(13.7314, 100.5414),
     gender: 'female',
     pace: new Pace(330),
     preferredDistances: [new PreferredDistance('10k')],

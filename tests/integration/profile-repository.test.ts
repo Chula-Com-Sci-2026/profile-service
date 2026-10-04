@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest'
+import { Area } from '../../src/domain/area.ts'
 import { InvalidProfileFieldError, ProfileAlreadyExistsError } from '../../src/domain/errors.ts'
 import { Pace } from '../../src/domain/pace.ts'
 import { PreferredDistance } from '../../src/domain/preferred-distance.ts'
@@ -37,7 +38,7 @@ function aFullProfile(): Profile {
     avatarRef: 'avatars/7f3a9c2e15.jpg',
     birthYear: 1994,
     gender: 'female',
-    area: 'lumphini',
+    area: new Area(13.731723456, 100.541532),
     pace: new Pace(330),
     volume: new Volume(45_000),
     experience: 'intermediate',
@@ -51,6 +52,7 @@ function aMinimalProfile(): Profile {
     userId: 'b41d8e0a63',
     displayName: 'Beam',
     birthYear: 1990,
+    area: new Area(13.729, 100.559),
     preferredDistances: [],
     preferredRunTimes: [],
   })
@@ -67,7 +69,7 @@ describe('round trip', () => {
     expect(found?.avatarRef).toBe('avatars/7f3a9c2e15.jpg')
     expect(found?.birthYear).toBe(1994)
     expect(found?.gender).toBe('female')
-    expect(found?.area).toBe('lumphini')
+    expect(found?.area.equals(new Area(13.731723456, 100.541532))).toBe(true)
     expect(found?.experience).toBe('intermediate')
   })
 
@@ -163,8 +165,8 @@ describe('delete', () => {
 describe('row to domain is a boundary', () => {
   it('reports a corrupt row as our problem, keeping the field error as the cause', async () => {
     await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, birth_year, gender, preferred_distances, preferred_run_times)
-      VALUES ('cause', 'Ann', 1992, 'banana', '[]'::jsonb, '[]'::jsonb)
+      INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, gender, preferred_distances, preferred_run_times)
+      VALUES ('cause', 'Ann', 1992, 13.73, 100.54, 'banana', '[]'::jsonb, '[]'::jsonb)
     `)
     const error = await repository.findById('cause').catch((e: unknown) => e)
 
@@ -176,8 +178,8 @@ describe('row to domain is a boundary', () => {
   it('rejects a row the table was happy to store but §4 forbids', async () => {
     // The table enforces shape and the primary key. It has no opinion about gender.
     await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, birth_year, gender, preferred_distances, preferred_run_times)
-      VALUES ('2c9f5b7d10', 'Ploy', 1996, 'banana', '[]'::jsonb, '[]'::jsonb)
+      INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, gender, preferred_distances, preferred_run_times)
+      VALUES ('2c9f5b7d10', 'Ploy', 1996, 13.73, 100.54, 'banana', '[]'::jsonb, '[]'::jsonb)
     `)
     await expect(repository.findById('2c9f5b7d10')).rejects.toThrow(CorruptProfileRowError)
   })
@@ -188,33 +190,42 @@ describe('row to domain is a boundary', () => {
     ["'{}'::jsonb", 'an object'],
   ])('rejects a set column holding %s — jsonb NOT NULL does not stop it', async (stored) => {
     await db.execute(
-      sql.raw(`INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
-               VALUES ('shape', 'Ann', 1992, ${stored}, '[]'::jsonb)`),
+      sql.raw(`INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, preferred_distances, preferred_run_times)
+               VALUES ('shape', 'Ann', 1992, 13.73, 100.54, ${stored}, '[]'::jsonb)`),
     )
     await expect(repository.findById('shape')).rejects.toThrow(CorruptProfileRowError)
   })
 
   it('rejects a set holding a member of the wrong type', async () => {
     await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
-      VALUES ('member', 'Ann', 1992, '[42]'::jsonb, '[]'::jsonb)
+      INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, preferred_distances, preferred_run_times)
+      VALUES ('member', 'Ann', 1992, 13.73, 100.54, '[42]'::jsonb, '[]'::jsonb)
     `)
     await expect(repository.findById('member')).rejects.toThrow(CorruptProfileRowError)
   })
 
   it('rejects a run time missing half of its pair', async () => {
     await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, birth_year, preferred_distances, preferred_run_times)
-      VALUES ('pair', 'Ann', 1992, '[]'::jsonb, '[{"dayOfWeek":"mon"}]'::jsonb)
+      INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, preferred_distances, preferred_run_times)
+      VALUES ('pair', 'Ann', 1992, 13.73, 100.54, '[]'::jsonb, '[{"dayOfWeek":"mon"}]'::jsonb)
     `)
     await expect(repository.findById('pair')).rejects.toThrow(CorruptProfileRowError)
   })
 
   it('rejects a stored value that is out of range', async () => {
     await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, birth_year, pace, preferred_distances, preferred_run_times)
-      VALUES ('e86a1f4c92', 'Bank', 1988, 20, '[]'::jsonb, '[]'::jsonb)
+      INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, pace, preferred_distances, preferred_run_times)
+      VALUES ('e86a1f4c92', 'Bank', 1988, 13.73, 100.54, 20, '[]'::jsonb, '[]'::jsonb)
     `)
     await expect(repository.findById('e86a1f4c92')).rejects.toThrow(CorruptProfileRowError)
+  })
+
+  it('rejects a stored area that is off the map', async () => {
+    // double precision holds 91 happily; §4 does not.
+    await db.execute(sql`
+      INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, preferred_distances, preferred_run_times)
+      VALUES ('offmap', 'Ann', 1992, 91, 100.54, '[]'::jsonb, '[]'::jsonb)
+    `)
+    await expect(repository.findById('offmap')).rejects.toThrow(CorruptProfileRowError)
   })
 })

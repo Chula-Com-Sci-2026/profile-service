@@ -1,4 +1,4 @@
-import { isArea, type AreaName } from './area.ts'
+import type { Area } from './area.ts'
 import { ensure } from './errors.ts'
 import { isExperience, type Experience } from './experience.ts'
 import { isGender, type Gender } from './gender.ts'
@@ -15,7 +15,7 @@ export type ProfileFields = {
   avatarRef?: string
   birthYear: number
   gender?: Gender
-  area?: AreaName
+  area: Area
   pace?: Pace
   volume?: Volume
   experience?: Experience
@@ -25,7 +25,7 @@ export type ProfileFields = {
 
 /**
  * A partial edit. An absent key leaves the field alone; `null` clears it.
- * `displayName` and `birthYear` cannot be cleared — a profile cannot exist without them.
+ * `displayName`, `birthYear` and `area` cannot be cleared — a profile cannot exist without them.
  * A set is replaced by sending a new array, never by sending null.
  */
 export type ProfileChanges = {
@@ -34,7 +34,7 @@ export type ProfileChanges = {
   bio?: string | null
   avatarRef?: string | null
   gender?: Gender | null
-  area?: AreaName | null
+  area?: Area
   pace?: Pace | null
   volume?: Volume | null
   experience?: Experience | null
@@ -75,6 +75,7 @@ export class Profile {
   readonly userId: string
   readonly displayName: string
   readonly birthYear: number
+  readonly area: Area
   readonly preferredDistances: readonly PreferredDistance[]
   readonly preferredRunTimes: readonly PreferredRunTime[]
 
@@ -83,7 +84,6 @@ export class Profile {
   declare readonly bio?: string
   declare readonly avatarRef?: string
   declare readonly gender?: Gender
-  declare readonly area?: AreaName
   declare readonly pace?: Pace
   declare readonly volume?: Volume
   declare readonly experience?: Experience
@@ -110,7 +110,6 @@ export class Profile {
 
     // Value objects validate themselves; the unions cannot, so the root checks them.
     if (fields.gender !== undefined) ensure(isGender(fields.gender), 'gender', 'is not a known value')
-    if (fields.area !== undefined) ensure(isArea(fields.area), 'area', 'is not a known value')
     if (fields.experience !== undefined) ensure(isExperience(fields.experience), 'experience', 'is not a known value')
 
     this.userId = userId
@@ -119,7 +118,7 @@ export class Profile {
     if (avatarRef !== undefined) this.avatarRef = avatarRef
     this.birthYear = fields.birthYear
     if (fields.gender !== undefined) this.gender = fields.gender
-    if (fields.area !== undefined) this.area = fields.area
+    this.area = fields.area
     if (fields.pace !== undefined) this.pace = fields.pace
     if (fields.volume !== undefined) this.volume = fields.volume
     if (fields.experience !== undefined) this.experience = fields.experience
@@ -140,7 +139,6 @@ export class Profile {
     const bio = settle(changes.bio, this.bio)
     const avatarRef = settle(changes.avatarRef, this.avatarRef)
     const gender = settle(changes.gender, this.gender)
-    const area = settle(changes.area, this.area)
     const pace = settle(changes.pace, this.pace)
     const volume = settle(changes.volume, this.volume)
     const experience = settle(changes.experience, this.experience)
@@ -149,12 +147,12 @@ export class Profile {
       userId: this.userId,
       displayName: changes.displayName ?? this.displayName,
       birthYear: changes.birthYear ?? this.birthYear,
+      area: changes.area ?? this.area,
       preferredDistances: changes.preferredDistances ?? this.preferredDistances,
       preferredRunTimes: changes.preferredRunTimes ?? this.preferredRunTimes,
       ...(bio !== undefined && { bio }),
       ...(avatarRef !== undefined && { avatarRef }),
       ...(gender !== undefined && { gender }),
-      ...(area !== undefined && { area }),
       ...(pace !== undefined && { pace }),
       ...(volume !== undefined && { volume }),
       ...(experience !== undefined && { experience }),
