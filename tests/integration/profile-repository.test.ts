@@ -43,6 +43,7 @@ function aFullProfile(): Profile {
     experience: 'intermediate',
     preferredRunTimes: [new PreferredRunTime('sat', 'early_morning'), new PreferredRunTime('mon', 'evening')],
     gear: ['Pegasus 41', 'Forerunner 265'],
+    hiddenFields: ['gender', 'birthYear'],
   })
 }
 
@@ -53,6 +54,7 @@ function aMinimalProfile(): Profile {
     area: new Area(13.729, 100.559),
     preferredRunTimes: [],
     gear: [],
+    hiddenFields: [],
   })
 }
 
@@ -69,6 +71,7 @@ describe('round trip', () => {
     expect(found?.gender).toBe('female')
     expect(found?.area.equals(new Area(13.731723456, 100.541532))).toBe(true)
     expect(found?.experience).toBe('intermediate')
+    expect(found?.hiddenFields).toEqual(['birthYear', 'gender'])
   })
 
   it('brings back value objects, not bare numbers', async () => {
@@ -243,5 +246,13 @@ describe('row to domain is a boundary', () => {
       VALUES ('reversed', 'Ann', 13.73, 100.54, 400, 330, '[]'::jsonb)
     `)
     await expect(repository.findById('reversed')).rejects.toThrow(CorruptProfileRowError)
+  })
+
+  it('rejects a stored hidden set naming a field that is always shown', async () => {
+    await db.execute(sql`
+      INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, preferred_run_times, hidden_fields)
+      VALUES ('shown', 'Ann', 13.73, 100.54, '[]'::jsonb, '["displayName"]'::jsonb)
+    `)
+    await expect(repository.findById('shown')).rejects.toThrow(CorruptProfileRowError)
   })
 })

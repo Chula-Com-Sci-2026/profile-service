@@ -16,6 +16,7 @@ export function fieldsFor(overrides: Partial<ProfileFields> = {}): ProfileFields
     gender: 'female',
     paceRange: new PaceRange(330, 390),
     gear: ['Pegasus 41'],
+    hiddenFields: [],
     preferredRunTimes: [],
     ...overrides,
   }

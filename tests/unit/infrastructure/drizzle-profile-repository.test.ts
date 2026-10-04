@@ -29,6 +29,7 @@ const profile = new Profile({
   bio: 'Chasing a sub-2 half.',
   area: new Area(13.731723456, 100.541532),
   gear: [],
+  hiddenFields: [],
   preferredRunTimes: [],
 })
 

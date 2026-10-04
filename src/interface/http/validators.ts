@@ -38,6 +38,9 @@ const paceRange = z.strictObject({
 /** Exact repeats are shape (400); items equal only once trimmed are the domain's to collapse. */
 const gear = z.array(z.string()).refine(noRepeats((item: string) => item), 'must not repeat an item')
 
+/** `uniqueItems: true` for the hidden set too; which names may be hidden is §4's. */
+const hiddenFields = z.array(z.string()).refine(noRepeats((field: string) => field), 'must not repeat a field')
+
 type RunTimeItem = z.infer<typeof runTime>
 
 const runTimes = z
@@ -60,6 +63,7 @@ export const profileWrite = z.strictObject({
   experience: z.string().optional(),
   preferredRunTimes: runTimes.optional(),
   gear: gear.optional(),
+  hiddenFields: hiddenFields.optional(),
 })
 
 /**
@@ -80,6 +84,7 @@ export const profilePatch = z.strictObject({
   experience: z.string().nullable().optional(),
   preferredRunTimes: runTimes.optional(),
   gear: gear.optional(),
+  hiddenFields: hiddenFields.optional(),
 })
 
 export type ProfileWriteBody = z.infer<typeof profileWrite>

@@ -1,6 +1,7 @@
 import { Area } from '../../domain/area.ts'
 import { toExperience } from '../../domain/experience.ts'
 import { toGender } from '../../domain/gender.ts'
+import { toHiddenField } from '../../domain/hidden-field.ts'
 import { PaceRange } from '../../domain/pace-range.ts'
 import { PreferredRunTime } from '../../domain/preferred-run-time.ts'
 import type { ProfileChanges, ProfileFields } from '../../domain/profile.ts'
@@ -21,6 +22,7 @@ export function toFields(userId: string, body: ProfileWriteBody): ProfileFields 
     area: new Area(body.area.latitude, body.area.longitude),
     preferredRunTimes: (body.preferredRunTimes ?? []).map((t) => new PreferredRunTime(t.dayOfWeek, t.timeOfDay)),
     gear: body.gear ?? [],
+    hiddenFields: (body.hiddenFields ?? []).map(toHiddenField),
     ...(body.bio !== undefined && { bio: body.bio }),
     ...(body.avatarRef !== undefined && { avatarRef: body.avatarRef }),
     ...(body.birthYear !== undefined && { birthYear: body.birthYear }),
@@ -53,5 +55,6 @@ export function toChanges(body: ProfilePatchBody): ProfileChanges {
       preferredRunTimes: body.preferredRunTimes.map((t) => new PreferredRunTime(t.dayOfWeek, t.timeOfDay)),
     }),
     ...(body.gear !== undefined && { gear: body.gear }),
+    ...(body.hiddenFields !== undefined && { hiddenFields: body.hiddenFields.map(toHiddenField) }),
   }
 }

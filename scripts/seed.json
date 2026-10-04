@@ -67,6 +67,10 @@
     "gear": [
       "Nike Vaporfly 3",
       "COROS Pace 3"
+    ],
+    "hiddenFields": [
+      "birthYear",
+      "gender"
     ]
   },
   {

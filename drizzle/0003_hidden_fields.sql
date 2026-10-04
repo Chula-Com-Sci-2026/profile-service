@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "hidden_fields" jsonb DEFAULT '[]'::jsonb NOT NULL;

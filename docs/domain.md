@@ -29,7 +29,7 @@
 
 Identity is upstream. We are **conformist**: we take its `userId` as given. We never create one, and we treat it as a meaningless string. Identity may delete a runner; nothing tells us, so a profile can outlive the runner it describes. **Not handled yet.**
 
-Buddy Discovery is downstream, and we are its **supplier**: it builds its own copy of how each runner appears to other runners from two events we publish. **ProfileUpdated** goes out after a profile is created or changed and carries the profile as other runners see it, the area as its cell. **ProfileDeleted** goes out after a profile is removed. We shape them around what Buddy Discovery matches on, and because it keeps its own copy, this service needs no bulk read.
+Buddy Discovery is downstream, and we are its **supplier**: it builds its own copy of how each runner appears to other runners from two events we publish. **ProfileUpdated** goes out after a profile is created or changed and carries the runner's **public card** — visibility already applied, the area as its cell — plus the fields Buddy Discovery matches on: pace range, experience and preferred run times, sent even when the runner hid them from other runners. It should rank on a hidden field and never filter on one, since repeated searches would reveal it, the way NFR-4.1 rules out for the area. **ProfileDeleted** goes out after a profile is removed. Because Buddy Discovery keeps its own copy, this service needs no bulk read.
 
 ## 2. Ubiquitous language
 
@@ -52,6 +52,8 @@ Use these words in code, tests, API fields, commit messages, and conversation.
 | **Experience** | How new or experienced a runner is. |
 | **Preferred run time** | Which days and times of day a runner prefers to run. |
 | **Gear** | What a runner runs with, such as shoes or a watch. |
+| **Public card** | The part of a profile other runners see: the fields the runner has not hidden, with the area as its cell. |
+| **Hidden field** | A field the runner has chosen to leave off their public card. |
 
 ## 3. The aggregate
 
@@ -68,7 +70,8 @@ Profile (root)
 ├─ usualDistance      UsualDistance                        class
 ├─ experience         Experience                           union
 ├─ preferredRunTimes  PreferredRunTime[]                   class
-└─ gear               string[]
+├─ gear               string[]
+└─ hiddenFields       HiddenField[]                        union
 ```
 
 **One profile per runner.** `Profile` is the single aggregate root and the only entity here — there are no other aggregates in this context, and the whole profile is loaded and saved as one unit. Everything marked `union` or `class` is a value object: no identity, no lifecycle of its own, immutable, compared by value — the marker says only how it is implemented. The unmarked fields are plain primitives, the same kind of value but with no type of their own, so their rules are enforced by the `Profile` constructor instead. Of the fields a runner fills in, only `displayName` and `area` are required; everything else is their choice, and an unset set is empty rather than absent.
@@ -79,6 +82,7 @@ Profile (root)
 - **getProfile()** — returns one profile, by id. There is no way to list or search.
 - **updateProfile()** — changes a profile. `userId` never changes.
 - **deleteProfile()** — removes a profile permanently.
+- **publicCard()** — the profile as other runners see it: `userId`, `displayName`, the area cell and `avatarRef` always, and every other field that is set and not hidden.
 
 ## 4. Fields and their rules
 
@@ -96,6 +100,7 @@ Profile (root)
 | `experience` | One of `beginner` · `intermediate` · `advanced`. |
 | `preferredRunTimes` | A set of pairs — a day `mon` · `tue` · `wed` · `thu` · `fri` · `sat` · `sun`, plus a time of day (below). |
 | `gear` | A set of up to 10 items, each 1–50 chars after trimming. Items keep the order the runner gave; an item equal to an earlier one after trimming is the same item. |
+| `hiddenFields` | A set of `bio` · `birthYear` · `gender` · `paceRange` · `usualDistance` · `experience` · `preferredRunTimes` · `gear`. Empty unless the runner hides something: everything is public until hidden. |
 
 Character counts are Unicode code points: an emoji counts as one character, not two.
 
@@ -115,6 +120,10 @@ All times are Bangkok local time (UTC+7).
 ### Area cells
 
 An area's cell is the point nearest it whose latitude and longitude are both multiples of 0.01°. A cell is about 1.1 km across in Bangkok.
+
+### Public card
+
+`userId`, `displayName`, `avatarRef` and the area cell are always on it; the exact area never is. Every other field is on it when it is set and not hidden. A hidden field is absent, never null. A field may be hidden while unset, and stays hidden once set.
 
 ## 5. Invariants
 

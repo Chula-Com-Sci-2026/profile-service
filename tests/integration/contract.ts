@@ -127,3 +127,14 @@ export async function expectContract(
     )
   }
 }
+
+/**
+ * Asserts a body is one named schema. `getProfile` answers `oneOf: [Profile, PublicCard]`, and
+ * the coverage assertion counts statuses, not branches — this is how a test says which branch.
+ */
+export function expectSchema(name: string, body: unknown): void {
+  const validate = validator(`/components/schemas/${name}`)
+  if (!validate(body)) {
+    throw new Error(`not a ${name}: ${ajv.errorsText(validate.errors)}\n${JSON.stringify(body, null, 2)}`)
+  }
+}

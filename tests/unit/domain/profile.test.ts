@@ -14,6 +14,7 @@ function aProfile(overrides: Partial<ProfileFields> = {}): Profile {
     area: new Area(13.7314, 100.5414),
     preferredRunTimes: [],
     gear: [],
+    hiddenFields: [],
     ...overrides,
   })
 }

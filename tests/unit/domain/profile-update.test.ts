@@ -17,6 +17,7 @@ function aProfile(): Profile {
     usualDistance: new UsualDistance(10_000),
     preferredRunTimes: [],
     gear: ['Pegasus 41'],
+    hiddenFields: [],
   })
 }
 
@@ -113,5 +114,18 @@ describe('Profile.update — the result is a new, valid Profile', () => {
 
   it('trims what it is given', () => {
     expect(aProfile().update({ displayName: '  Beam  ' }).displayName).toBe('Beam')
+  })
+})
+
+describe('Profile.update — hidden fields are a set like any other', () => {
+  it('replaces the hidden set whole', () => {
+    const after = aProfile().update({ hiddenFields: ['gender', 'birthYear'] })
+    expect(after.hiddenFields).toEqual(['birthYear', 'gender'])
+    expect(after.update({ hiddenFields: [] }).hiddenFields).toEqual([])
+  })
+
+  it('keeps the hidden set when the change leaves it out', () => {
+    const hidden = aProfile().update({ hiddenFields: ['gender'] })
+    expect(hidden.update({ displayName: 'Nok R.' }).hiddenFields).toEqual(['gender'])
   })
 })

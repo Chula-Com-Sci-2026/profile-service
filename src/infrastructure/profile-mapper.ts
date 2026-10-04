@@ -2,6 +2,7 @@ import { Area } from '../domain/area.ts'
 import { InvalidProfileFieldError } from '../domain/errors.ts'
 import { toExperience } from '../domain/experience.ts'
 import { toGender } from '../domain/gender.ts'
+import { toHiddenField } from '../domain/hidden-field.ts'
 import { PaceRange } from '../domain/pace-range.ts'
 import { PreferredRunTime } from '../domain/preferred-run-time.ts'
 import { Profile } from '../domain/profile.ts'
@@ -40,6 +41,13 @@ function asPaceRange(fastest: number | null, slowest: number | null): PaceRange 
   if (fastest === null && slowest === null) return undefined
   if (fastest === null || slowest === null) throw new InvalidProfileFieldError('paceRange', 'is stored with one end missing')
   return new PaceRange(fastest, slowest)
+}
+
+function asHiddenFields(value: unknown) {
+  return asArray(value, 'hiddenFields').map((member) => {
+    if (typeof member !== 'string') throw new InvalidProfileFieldError('hiddenFields', 'holds something that is not a field name')
+    return toHiddenField(member)
+  })
 }
 
 function asRunTimes(value: unknown): PreferredRunTime[] {
@@ -89,6 +97,7 @@ function buildProfile(row: ProfileRow): Profile {
     area: new Area(row.areaLatitude, row.areaLongitude),
     preferredRunTimes: asRunTimes(row.preferredRunTimes),
     gear: asGear(row.gear),
+    hiddenFields: asHiddenFields(row.hiddenFields),
     ...(row.bio !== null && { bio: row.bio }),
     ...(row.avatarRef !== null && { avatarRef: row.avatarRef }),
     ...(row.birthYear !== null && { birthYear: row.birthYear }),
@@ -118,5 +127,6 @@ export function toRow(profile: Profile): ProfileInsert {
       timeOfDay: time.timeOfDay,
     })),
     gear: [...profile.gear],
+    hiddenFields: [...profile.hiddenFields],
   }
 }

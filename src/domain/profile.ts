@@ -2,8 +2,10 @@ import type { Area } from './area.ts'
 import { ensure } from './errors.ts'
 import { isExperience, type Experience } from './experience.ts'
 import { isGender, type Gender } from './gender.ts'
+import { HIDEABLE_FIELDS, isHiddenField, type HiddenField } from './hidden-field.ts'
 import type { PaceRange } from './pace-range.ts'
 import { PreferredRunTime } from './preferred-run-time.ts'
+import type { PublicCard } from './public-card.ts'
 import type { UsualDistance } from './usual-distance.ts'
 
 /** Everything a profile is made of — domain.md §3. An unset scalar is absent; an unset set is empty. */
@@ -20,6 +22,7 @@ export type ProfileFields = {
   experience?: Experience
   preferredRunTimes: readonly PreferredRunTime[]
   gear: readonly string[]
+  hiddenFields: readonly HiddenField[]
 }
 
 /**
@@ -39,6 +42,7 @@ export type ProfileChanges = {
   experience?: Experience | null
   preferredRunTimes?: readonly PreferredRunTime[]
   gear?: readonly string[]
+  hiddenFields?: readonly HiddenField[]
 }
 
 /** Trim, then treat a value that is now empty as never given. Keeps "absent" the only unset state. */
@@ -93,6 +97,7 @@ export class Profile {
   readonly area: Area
   readonly preferredRunTimes: readonly PreferredRunTime[]
   readonly gear: readonly string[]
+  readonly hiddenFields: readonly HiddenField[]
 
   // `declare` so TypeScript emits no field. A plain `readonly bio?: string` would define the
   // key with value undefined on every instance, and §3 says an unset scalar is *absent*.
@@ -129,6 +134,9 @@ export class Profile {
     // Value objects validate themselves; the unions cannot, so the root checks them.
     if (fields.gender !== undefined) ensure(isGender(fields.gender), 'gender', 'is not a known value')
     if (fields.experience !== undefined) ensure(isExperience(fields.experience), 'experience', 'is not a known value')
+    for (const field of fields.hiddenFields) {
+      ensure(isHiddenField(field), 'hiddenFields', `must hold only ${HIDEABLE_FIELDS.join(', ')}`)
+    }
 
     this.userId = userId
     this.displayName = displayName
@@ -142,6 +150,8 @@ export class Profile {
     if (fields.experience !== undefined) this.experience = fields.experience
     this.preferredRunTimes = asSet(fields.preferredRunTimes)
     this.gear = asGear(fields.gear)
+    // A set in declared order: filtering the declared list both deduplicates and sorts.
+    this.hiddenFields = Object.freeze(HIDEABLE_FIELDS.filter((field) => fields.hiddenFields.includes(field)))
 
     Object.freeze(this)
   }
@@ -168,6 +178,7 @@ export class Profile {
       area: changes.area ?? this.area,
       preferredRunTimes: changes.preferredRunTimes ?? this.preferredRunTimes,
       gear: changes.gear ?? this.gear,
+      hiddenFields: changes.hiddenFields ?? this.hiddenFields,
       ...(bio !== undefined && { bio }),
       ...(avatarRef !== undefined && { avatarRef }),
       ...(birthYear !== undefined && { birthYear }),
@@ -175,6 +186,28 @@ export class Profile {
       ...(paceRange !== undefined && { paceRange }),
       ...(usualDistance !== undefined && { usualDistance }),
       ...(experience !== undefined && { experience }),
+    })
+  }
+
+  /**
+   * The profile as other runners see it — domain.md §4 "Public card". The only place field
+   * visibility is applied: the API and ProfileUpdated both serialise what this returns.
+   */
+  publicCard(): PublicCard {
+    const shown = (field: HiddenField): boolean => !this.hiddenFields.includes(field)
+    return Object.freeze({
+      userId: this.userId,
+      displayName: this.displayName,
+      areaCell: this.area.cell(),
+      ...(this.avatarRef !== undefined && { avatarRef: this.avatarRef }),
+      ...(shown('bio') && this.bio !== undefined && { bio: this.bio }),
+      ...(shown('birthYear') && this.birthYear !== undefined && { birthYear: this.birthYear }),
+      ...(shown('gender') && this.gender !== undefined && { gender: this.gender }),
+      ...(shown('paceRange') && this.paceRange !== undefined && { paceRange: this.paceRange }),
+      ...(shown('usualDistance') && this.usualDistance !== undefined && { usualDistance: this.usualDistance }),
+      ...(shown('experience') && this.experience !== undefined && { experience: this.experience }),
+      ...(shown('preferredRunTimes') && { preferredRunTimes: this.preferredRunTimes }),
+      ...(shown('gear') && { gear: this.gear }),
     })
   }
 }

@@ -13,6 +13,7 @@ const nok = new Profile({
   birthYear: 1994,
   area: new Area(13.731723456, 100.541532),
   gear: [],
+  hiddenFields: [],
   preferredRunTimes: [],
 })
 

@@ -16,7 +16,7 @@ import type { Env } from '../../src/interface/http/context.ts'
 import { contractDocument } from '../../src/interface/http/docs.ts'
 import { errorHandler } from '../../src/interface/http/error-handler.ts'
 import { currentRequestId } from '../../src/interface/http/request-context.ts'
-import { documentedResponses, exercised, expectContract } from './contract.ts'
+import { documentedResponses, exercised, expectContract, expectSchema } from './contract.ts'
 import { RecordingProfileEvents } from '../unit/application/profile-events-double.ts'
 import { anIdentity, type Identity } from './identity.ts'
 
@@ -275,6 +275,7 @@ describe('GET /v1/profiles/{userId} — getProfile', () => {
     const body = (await response.clone().json()) as Record<string, unknown>
     await expectContract('getProfile', 200, response)
 
+    expectSchema('Profile', body)
     expect(body['area']).toEqual(minimal.area)
     expect(body['areaCell']).toEqual(minimalCell)
   })
@@ -285,6 +286,7 @@ describe('GET /v1/profiles/{userId} — getProfile', () => {
     const body = (await response.clone().json()) as Record<string, unknown>
     await expectContract('getProfile', 200, response)
 
+    expectSchema('PublicCard', body)
     expect('area' in body).toBe(false)
     expect(body['areaCell']).toEqual(minimalCell)
     // Not just the key: the exact coordinates appear nowhere in what another runner receives.
@@ -555,6 +557,79 @@ describe('the edges of authentication', () => {
       headers: { authorization: `Bearer ${token}` },
     })
     await expectContract('getProfile', 401, response)
+  })
+})
+
+describe('field visibility — FR-2.8', () => {
+  const patch = (userId: string, body: unknown): Promise<Response> =>
+    as(userId, `/v1/profiles/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/merge-patch+json' },
+    })
+  const full = {
+    ...minimal,
+    bio: 'Chasing a sub-2 half.',
+    gender: 'female',
+    paceRange: { fastest: 330, slowest: 390 },
+    gear: ['Pegasus 41'],
+  }
+
+  it('201 a runner may start with fields hidden, and still sees them', async () => {
+    const response = await put(NOK, { ...full, hiddenFields: ['gender'] })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('createProfile', 201, response)
+
+    expect(body['hiddenFields']).toEqual(['gender'])
+    expect(body['gender']).toBe('female')
+  })
+
+  it('200 another runner gets the public card, without what was hidden', async () => {
+    await givenAProfile(NOK, { ...full, hiddenFields: ['gender', 'birthYear'] })
+    const response = await as(BEAM, `/v1/profiles/${NOK}`)
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('getProfile', 200, response)
+
+    expectSchema('PublicCard', body)
+    expect('gender' in body).toBe(false)
+    expect('birthYear' in body).toBe(false)
+    expect('hiddenFields' in body).toBe(false)
+    expect(body['bio']).toBe('Chasing a sub-2 half.')
+  })
+
+  it('200 the owner gets every field and the hidden set, even with everything hidden', async () => {
+    const everythingHidden = ['bio', 'birthYear', 'gender', 'paceRange', 'usualDistance', 'experience', 'preferredRunTimes', 'gear']
+    await givenAProfile(NOK, { ...full, hiddenFields: everythingHidden })
+    const response = await as(NOK, `/v1/profiles/${NOK}`)
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('getProfile', 200, response)
+
+    expectSchema('Profile', body)
+    expect(body['gender']).toBe('female')
+    expect(body['hiddenFields']).toEqual(everythingHidden)
+  })
+
+  it('200 PATCH hides a field from other runners, and publishes the change', async () => {
+    await givenAProfile(NOK, full)
+    await expectContract('updateProfile', 200, await patch(NOK, { hiddenFields: ['bio'] }))
+
+    const body = (await (await as(BEAM, `/v1/profiles/${NOK}`)).json()) as Record<string, unknown>
+    expect('bio' in body).toBe(false)
+    const last = events.published.at(-1)
+    expect(last?.type === 'updated' && last.profile.hiddenFields).toEqual(['bio'])
+  })
+
+  it('400 when a hidden field repeats', async () => {
+    await expectContract('createProfile', 400, await put(NOK, { ...minimal, hiddenFields: ['bio', 'bio'] }))
+  })
+
+  it('400 when the hidden set is sent as null — a set is replaced, never cleared', async () => {
+    await givenAProfile()
+    await expectContract('updateProfile', 400, await patch(NOK, { hiddenFields: null }))
+  })
+
+  it('422 when asked to hide a field that is always shown', async () => {
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, hiddenFields: ['displayName'] }))
   })
 })
 

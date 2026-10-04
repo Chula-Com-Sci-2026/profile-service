@@ -14,6 +14,9 @@ info:
     It also sends two events to the services that subscribe — `ProfileUpdated` and
     `ProfileDeleted` — described under `webhooks`.
 
+    Other runners see a profile's public card: the fields its owner has not hidden
+    (`hiddenFields`), the area only as its cell. The owner sees everything.
+
     Text fields are trimmed before their length rules apply, so whitespace alone counts
     as empty.
 
@@ -55,10 +58,17 @@ paths:
       operationId: getProfile
       summary: Read a runner's profile
       description: >-
-        Any runner may read any profile. Only its owner receives `area`, the exact point;
-        every caller receives `areaCell`.
+        Any runner may read any profile. Its owner receives the whole of it — the exact `area`
+        and `hiddenFields` included; anyone else receives its public card.
       responses:
-        '200': { $ref: '#/components/responses/Profile' }
+        '200':
+          description: The whole profile for its owner; the public card for anyone else
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Profile'
+                  - $ref: '#/components/schemas/PublicCard'
         '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
         '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
         default: { $ref: '#/components/responses/Problem' }
@@ -223,8 +233,9 @@ webhooks:
       summary: A profile was created or changed
       description: >-
         Sent to every subscriber listed in this service's configuration (ADR-0019) after the
-        change is saved, and awaited — a synchronous call, not a broker. `data` is the profile as
-        another runner sees it, the area only as its cell. Each attempt has a 1 s timeout; three
+        change is saved, and awaited — a synchronous call, not a broker. `data.card` is the runner's
+        public card — visibility applied, the area only as its cell — and `data.matching` the
+        fields Buddy Discovery matches on, even when hidden. Each attempt has a 1 s timeout; three
         attempts, retried on a network error, a timeout, 408, 429 or 5xx, not on any other 4xx.
         A subscriber still down after them loses the event (ADR-0019). Deduplicate by `id`. Order
         by `time` per `subject`, ProfileDeleted included: keep the latest event for each runner,
@@ -333,15 +344,21 @@ components:
             What a runner runs with, such as shoes or a watch, in the runner's order. Items are
             trimmed; one equal to an earlier one once trimmed is the same item.
           items: { type: string, minLength: 1, maxLength: 50 }
+        hiddenFields:
+          type: array
+          uniqueItems: true
+          description: >-
+            Fields left off the public card. Empty unless the runner hides something —
+            everything is public until hidden. The owner still sees every field.
+          items: { $ref: '#/components/schemas/HideableField' }
 
     Profile:
       description: >-
-        What a response always contains. `required` here means present on the wire,
-        not that the runner had to answer — see `ProfileWrite` for what a client must send.
-        `area` is present only for the profile's owner; `areaCell` is present for everyone,
-        and is not writable.
+        The owner's view: every field, the exact `area`, its `areaCell` and `hiddenFields`.
+        `required` here means present on the wire, not that the runner had to answer — see
+        `ProfileWrite` for what a client must send. `areaCell` is not writable.
       allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
-      required: [userId, displayName, areaCell, preferredRunTimes, gear]
+      required: [userId, displayName, area, areaCell, preferredRunTimes, gear, hiddenFields]
       unevaluatedProperties: false
       properties:
         userId:   { type: string, minLength: 1, maxLength: 64 }
@@ -368,6 +385,7 @@ components:
         experience:    { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/experience' },    { type: 'null' }] }
         preferredRunTimes: { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }
         gear:              { $ref: '#/components/schemas/ProfileFields/properties/gear' }
+        hiddenFields:      { $ref: '#/components/schemas/ProfileFields/properties/hiddenFields' }
 
     ProfileWrite:
       description: No `userId` in the body — it is the path parameter.
@@ -377,6 +395,7 @@ components:
 
     Gender:     { type: string, enum: [male, female, non_binary] }
     Experience: { type: string, enum: [beginner, intermediate, advanced] }
+    HideableField: { type: string, enum: [bio, birthYear, gender, paceRange, usualDistance, experience, preferredRunTimes, gear] }
 
     Area:
       type: object
@@ -453,7 +472,13 @@ components:
       properties:
         type:       { const: ProfileUpdated }
         dataschema: { const: 'urn:cant-run-alone:profile-service:ProfileUpdated:1' }
-        data:       { $ref: '#/components/schemas/PublicProfile' }
+        data:
+          type: object
+          additionalProperties: false
+          required: [card, matching]
+          properties:
+            card:     { $ref: '#/components/schemas/PublicCard' }
+            matching: { $ref: '#/components/schemas/Matching' }
 
     ProfileDeletedEvent:
       allOf: [{ $ref: '#/components/schemas/CloudEvent' }]
@@ -464,10 +489,38 @@ components:
         datacontenttype: false
         data:            false
 
-    PublicProfile:
+    PublicCard:
+      type: object
       description: >-
-        The profile as another runner sees it: the `Profile` response with `area` forbidden.
-        When per-field visibility arrives, it narrows this to the fields a runner made public.
-      allOf: [{ $ref: '#/components/schemas/Profile' }]
+        A profile as other runners see it — the team's "public card". `userId`, `displayName`,
+        `areaCell` and, when set, `avatarRef` are always here; every other field is here when it
+        is set and not hidden. A hidden field is absent, never null. The exact area and the
+        hidden set are never here.
+      additionalProperties: false
+      required: [userId, displayName, areaCell]
       properties:
-        area: false
+        userId:            { type: string, minLength: 1, maxLength: 64 }
+        displayName:       { $ref: '#/components/schemas/ProfileFields/properties/displayName' }
+        areaCell:          { $ref: '#/components/schemas/AreaCell' }
+        avatarRef:         { $ref: '#/components/schemas/ProfileFields/properties/avatarRef' }
+        bio:               { $ref: '#/components/schemas/ProfileFields/properties/bio' }
+        birthYear:         { $ref: '#/components/schemas/ProfileFields/properties/birthYear' }
+        gender:            { $ref: '#/components/schemas/ProfileFields/properties/gender' }
+        paceRange:         { $ref: '#/components/schemas/ProfileFields/properties/paceRange' }
+        usualDistance:     { $ref: '#/components/schemas/ProfileFields/properties/usualDistance' }
+        experience:        { $ref: '#/components/schemas/ProfileFields/properties/experience' }
+        preferredRunTimes: { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }
+        gear:              { $ref: '#/components/schemas/ProfileFields/properties/gear' }
+
+    Matching:
+      type: object
+      description: >-
+        The fields Buddy Discovery matches on (FR-4.1, FR-4.2), sent even when the runner hid
+        them from other runners. Rank on them; never filter on a field the card leaves out —
+        repeated searches would reveal it. Absent when unset; the set is empty when unset.
+      additionalProperties: false
+      required: [preferredRunTimes]
+      properties:
+        paceRange:         { $ref: '#/components/schemas/ProfileFields/properties/paceRange' }
+        experience:        { $ref: '#/components/schemas/ProfileFields/properties/experience' }
+        preferredRunTimes: { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }

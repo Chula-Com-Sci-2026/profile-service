@@ -28,6 +28,7 @@ export const profiles = pgTable(
     // Sets are NOT NULL with no third state: unset is `[]`, never null.
     preferredRunTimes: jsonb('preferred_run_times').$type<StoredRunTime[]>().notNull(),
     gear: jsonb('gear').$type<string[]>().notNull().default([]),
+    hiddenFields: jsonb('hidden_fields').$type<string[]>().notNull().default([]),
   },
   (table) => [
     check('pace_range_has_both_ends', sql`(${table.paceFastest} IS NULL) = (${table.paceSlowest} IS NULL)`),
