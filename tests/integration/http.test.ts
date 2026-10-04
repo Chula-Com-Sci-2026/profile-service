@@ -438,6 +438,11 @@ describe('the request context', () => {
     expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)
   })
 
+  it('mints one when the X-Request-Id it is given is empty — an empty id joins nothing', async () => {
+    const response = await app.request('/health', { headers: { 'x-request-id': '' } })
+    expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
   it('carries a given X-Request-Id through', async () => {
     const response = await app.request('/health', { headers: { 'x-request-id': 'abc123' } })
     expect(response.headers.get('x-request-id')).toBe('abc123')

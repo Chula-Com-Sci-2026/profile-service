@@ -33,8 +33,10 @@ export function currentRequestId(): string | undefined {
  */
 export function requestContext(base: Logger) {
   return createMiddleware<Env>(async (c, next) => {
+    // `||`, not `??`: an empty X-Request-Id is a header present with nothing in it, and an empty
+    // id joins nothing — nor may it reach an event, whose contract requires at least one character.
     const requestId =
-      traceId(c.req.header('traceparent')) ?? c.req.header(REQUEST_ID_HEADER) ?? randomUUID()
+      traceId(c.req.header('traceparent')) || c.req.header(REQUEST_ID_HEADER)?.trim() || randomUUID()
 
     c.set('requestId', requestId)
     c.set('log', base.child({ requestId }))
