@@ -122,6 +122,16 @@ describe('PUT /v1/profiles/{userId} — createProfile', () => {
     expect(body['areaCell']).toEqual({ latitude: 13.73, longitude: 100.54 })
   })
 
+  it('201 for whole-number coordinates, whose cell is the point itself', async () => {
+    // JSON has no integer type, but a client may still send 14 rather than 14.0.
+    const response = await put(NOK, { ...minimal, area: { latitude: 14, longitude: 100 } })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('createProfile', 201, response)
+
+    expect(body['area']).toEqual({ latitude: 14, longitude: 100 })
+    expect(body['areaCell']).toEqual({ latitude: 14, longitude: 100 })
+  })
+
   it('400 when the area is missing — it is required', async () => {
     await expectContract('createProfile', 400, await put(NOK, { displayName: 'Nok', birthYear: 1994 }))
   })
