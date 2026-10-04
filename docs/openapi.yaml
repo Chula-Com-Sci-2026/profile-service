@@ -343,7 +343,8 @@ components:
           maxItems: 10
           description: >-
             What a runner runs with, such as shoes or a watch, in the runner's order. Items are
-            trimmed; one equal to an earlier one once trimmed is the same item.
+            trimmed; one equal to an earlier one once trimmed is the same item, and the limit of
+            10 counts items after that, so a request may repeat one in different spacing.
           items: { type: string, minLength: 1, maxLength: 50 }
         hiddenFields:
           type: array
