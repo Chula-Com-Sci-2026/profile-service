@@ -12,7 +12,7 @@ import { applyMigrations } from '../../src/infrastructure/migrations.ts'
  *
  * The image tag is also in `docker-compose.yml` — the two must move together.
  */
-const POSTGRES_IMAGE = 'postgres:17-alpine'
+const POSTGRES_IMAGE = 'postgres:16-alpine'
 
 let container: StartedPostgreSqlContainer
 
