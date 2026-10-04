@@ -312,23 +312,27 @@ components:
       description: >-
         The writable fields. An unset scalar is absent, never null; an unset set is empty.
       properties:
-        displayName: { type: string, minLength: 1, maxLength: 50 }
-        bio:         { type: string, maxLength: 500 }
-        avatarRef:   { type: string, maxLength: 128, description: A key to the image in this service's object storage. Storage is not implemented yet. }
-        birthYear:   { type: integer, minimum: 1900, description: Not later than the current year. }
-        gender:      { $ref: '#/components/schemas/Gender' }
-        area:        { $ref: '#/components/schemas/Area' }
-        pace:        { type: integer, minimum: 150, maximum: 900, description: Seconds per kilometre. }
-        volume:      { type: integer, minimum: 0, maximum: 500000, description: Metres per week. }
-        experience:  { $ref: '#/components/schemas/Experience' }
-        preferredDistances:
-          type: array
-          uniqueItems: true
-          items: { $ref: '#/components/schemas/Distance' }
+        displayName:   { type: string, minLength: 1, maxLength: 50 }
+        bio:           { type: string, maxLength: 500 }
+        avatarRef:     { type: string, maxLength: 128, description: A key to the image in this service's object storage. Storage is not implemented yet. }
+        birthYear:     { type: integer, minimum: 1900, description: Not later than the current year. }
+        gender:        { $ref: '#/components/schemas/Gender' }
+        area:          { $ref: '#/components/schemas/Area' }
+        paceRange:     { $ref: '#/components/schemas/PaceRange' }
+        usualDistance: { type: integer, minimum: 1, maximum: 50000, description: Metres, for one usual run. }
+        experience:    { $ref: '#/components/schemas/Experience' }
         preferredRunTimes:
           type: array
           uniqueItems: true
           items: { $ref: '#/components/schemas/RunTime' }
+        gear:
+          type: array
+          uniqueItems: true
+          maxItems: 10
+          description: >-
+            What a runner runs with, such as shoes or a watch, in the runner's order. Items are
+            trimmed; one equal to an earlier one once trimmed is the same item.
+          items: { type: string, minLength: 1, maxLength: 50 }
 
     Profile:
       description: >-
@@ -337,7 +341,7 @@ components:
         `area` is present only for the profile's owner; `areaCell` is present for everyone,
         and is not writable.
       allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
-      required: [userId, displayName, birthYear, areaCell, preferredDistances, preferredRunTimes]
+      required: [userId, displayName, areaCell, preferredRunTimes, gear]
       unevaluatedProperties: false
       properties:
         userId:   { type: string, minLength: 1, maxLength: 64 }
@@ -346,34 +350,33 @@ components:
     ProfilePatch:
       description: >-
         A merge patch (RFC 7396). An absent key is untouched; null clears the field.
-        `displayName`, `birthYear` and `area` cannot be cleared — a profile cannot exist
-        without them. A set is replaced by sending a new array, never by sending null.
-        An area is replaced whole, both coordinates every time, rather than merged member
-        by member as RFC 7396 would: half a moved pin means nothing.
+        `displayName` and `area` cannot be cleared — a profile cannot exist without them.
+        A set is replaced by sending a new array, never by sending null. An area and a pace
+        range are each replaced whole, rather than merged member by member as RFC 7396 would:
+        half a moved pin or half a range means nothing.
       type: object
       unevaluatedProperties: false
       properties:
-        displayName: { $ref: '#/components/schemas/ProfileFields/properties/displayName' }
-        birthYear:   { $ref: '#/components/schemas/ProfileFields/properties/birthYear' }
-        bio:         { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/bio' },        { type: 'null' }] }
-        avatarRef:   { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/avatarRef' },  { type: 'null' }] }
-        gender:      { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/gender' },     { type: 'null' }] }
-        area:        { $ref: '#/components/schemas/ProfileFields/properties/area' }
-        experience:  { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/experience' }, { type: 'null' }] }
-        pace:        { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/pace' },       { type: 'null' }] }
-        volume:      { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/volume' },     { type: 'null' }] }
-        preferredDistances: { $ref: '#/components/schemas/ProfileFields/properties/preferredDistances' }
-        preferredRunTimes:  { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }
+        displayName:   { $ref: '#/components/schemas/ProfileFields/properties/displayName' }
+        bio:           { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/bio' },           { type: 'null' }] }
+        avatarRef:     { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/avatarRef' },     { type: 'null' }] }
+        birthYear:     { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/birthYear' },     { type: 'null' }] }
+        gender:        { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/gender' },        { type: 'null' }] }
+        area:          { $ref: '#/components/schemas/ProfileFields/properties/area' }
+        paceRange:     { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/paceRange' },     { type: 'null' }] }
+        usualDistance: { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/usualDistance' }, { type: 'null' }] }
+        experience:    { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/experience' },    { type: 'null' }] }
+        preferredRunTimes: { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }
+        gear:              { $ref: '#/components/schemas/ProfileFields/properties/gear' }
 
     ProfileWrite:
       description: No `userId` in the body — it is the path parameter.
       allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
-      required: [displayName, birthYear, area]
+      required: [displayName, area]
       unevaluatedProperties: false
 
     Gender:     { type: string, enum: [male, female, non_binary] }
     Experience: { type: string, enum: [beginner, intermediate, advanced] }
-    Distance:   { type: string, enum: ['5k', '10k', half_marathon, marathon] }
 
     Area:
       type: object
@@ -383,6 +386,18 @@ components:
       properties:
         latitude:  { type: number, minimum: -90,  maximum: 90 }
         longitude: { type: number, minimum: -180, maximum: 180 }
+
+    PaceRange:
+      type: object
+      description: >-
+        Seconds per kilometre, 150–900 each (2:30–15:00 /km). `fastest` is not slower than
+        `slowest` — a rule JSON Schema cannot state, so breaking it answers 422. One steady
+        pace gives both the same value.
+      additionalProperties: false
+      required: [fastest, slowest]
+      properties:
+        fastest: { type: integer, minimum: 150, maximum: 900 }
+        slowest: { type: integer, minimum: 150, maximum: 900 }
 
     AreaCell:
       description: >-

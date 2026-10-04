@@ -124,7 +124,13 @@ async function givenAProfile(userId = NOK, body: unknown = minimal): Promise<voi
 
 describe('PUT /v1/profiles/{userId} — createProfile', () => {
   it('201 creates the profile', async () => {
-    const response = await put(NOK, { ...minimal, bio: 'Chasing a sub-2 half.', pace: 330 })
+    const response = await put(NOK, {
+      ...minimal,
+      bio: 'Chasing a sub-2 half.',
+      paceRange: { fastest: 330, slowest: 390 },
+      usualDistance: 10000,
+      gear: ['Pegasus 41'],
+    })
     await expectContract('createProfile', 201, response)
   })
 
@@ -134,7 +140,7 @@ describe('PUT /v1/profiles/{userId} — createProfile', () => {
     await expectContract('createProfile', 201, response)
 
     expect('bio' in body).toBe(false)
-    expect(body['preferredDistances']).toEqual([])
+    expect(body['gear']).toEqual([])
   })
 
   it('201 answers the owner with the exact area and its cell', async () => {
@@ -227,6 +233,28 @@ describe('PUT /v1/profiles/{userId} — createProfile', () => {
 
   it('422 for a value outside a closed union', async () => {
     await expectContract('createProfile', 422, await put(NOK, { ...minimal, gender: 'banana' }))
+  })
+
+  it('201 without a birth year — it is optional', async () => {
+    const response = await put(NOK, { displayName: 'Nok', area: minimal.area })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('createProfile', 201, response)
+
+    expect('birthYear' in body).toBe(false)
+  })
+
+  it('422 when the fastest pace is slower than the slowest', async () => {
+    const response = await put(NOK, { ...minimal, paceRange: { fastest: 400, slowest: 330 } })
+    await expectContract('createProfile', 422, response)
+  })
+
+  it('422 for a gear item that is blank once trimmed', async () => {
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, gear: ['   '] }))
+  })
+
+  it('422 for an eleventh gear item', async () => {
+    const gear = Array.from({ length: 11 }, (_, i) => `item ${i}`)
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, gear }))
   })
 })
 
@@ -322,6 +350,20 @@ describe('PATCH /v1/profiles/{userId} — updateProfile', () => {
     expect(body['areaCell']).toEqual({ latitude: 13.8, longitude: 100.55 })
   })
 
+  it('200 and null clears the birth year', async () => {
+    await givenAProfile()
+    const response = await patch(NOK, { birthYear: null })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('updateProfile', 200, response)
+
+    expect('birthYear' in body).toBe(false)
+  })
+
+  it('400 when only half of the pace range is sent — it is replaced whole', async () => {
+    await givenAProfile(NOK, { ...minimal, paceRange: { fastest: 330, slowest: 390 } })
+    await expectContract('updateProfile', 400, await patch(NOK, { paceRange: { fastest: 300 } }))
+  })
+
   it('400 when the area is sent as null — it cannot be cleared', async () => {
     await givenAProfile()
     await expectContract('updateProfile', 400, await patch(NOK, { area: null }))
@@ -363,7 +405,7 @@ describe('PATCH /v1/profiles/{userId} — updateProfile', () => {
 
   it('422 when a value breaks a §4 rule', async () => {
     await givenAProfile()
-    await expectContract('updateProfile', 422, await patch(NOK, { pace: 10 }))
+    await expectContract('updateProfile', 422, await patch(NOK, { paceRange: { fastest: 10, slowest: 400 } }))
   })
 })
 
@@ -518,7 +560,7 @@ describe('the edges of authentication', () => {
 
 describe('sets are sets', () => {
   it('400 rather than silently deduplicating what the client sent', async () => {
-    const response = await put(NOK, { ...minimal, preferredDistances: ['5k', '5k'] })
+    const response = await put(NOK, { ...minimal, gear: ['Pegasus 41', 'Pegasus 41'] })
     await expectContract('createProfile', 400, response)
   })
 
@@ -758,7 +800,7 @@ describe('profile events — the use cases tell subscribers', () => {
     await givenAProfile()
     events.published.length = 0
     await expectContract('createProfile', 409, await put(NOK, minimal))
-    await expectContract('updateProfile', 422, await patch(NOK, { pace: 10 }))
+    await expectContract('updateProfile', 422, await patch(NOK, { paceRange: { fastest: 10, slowest: 400 } }))
     expect(events.published).toEqual([])
   })
 

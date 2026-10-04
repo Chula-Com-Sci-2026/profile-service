@@ -1,0 +1,122 @@
+{
+  "id": "ecae63a2-dda6-4f83-89f8-8da3d89c32cf",
+  "prevId": "6beec7de-f77d-461f-a963-fd448eb3a2a9",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.profiles": {
+      "name": "profiles",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bio": {
+          "name": "bio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_ref": {
+          "name": "avatar_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "birth_year": {
+          "name": "birth_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gender": {
+          "name": "gender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "area_latitude": {
+          "name": "area_latitude",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "area_longitude": {
+          "name": "area_longitude",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pace_fastest": {
+          "name": "pace_fastest",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pace_slowest": {
+          "name": "pace_slowest",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usual_distance": {
+          "name": "usual_distance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "experience": {
+          "name": "experience",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "preferred_run_times": {
+          "name": "preferred_run_times",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gear": {
+          "name": "gear",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "pace_range_has_both_ends": {
+          "name": "pace_range_has_both_ends",
+          "value": "(\"profiles\".\"pace_fastest\" IS NULL) = (\"profiles\".\"pace_slowest\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

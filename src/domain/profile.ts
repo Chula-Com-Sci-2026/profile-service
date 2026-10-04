@@ -2,10 +2,9 @@ import type { Area } from './area.ts'
 import { ensure } from './errors.ts'
 import { isExperience, type Experience } from './experience.ts'
 import { isGender, type Gender } from './gender.ts'
-import { Pace } from './pace.ts'
-import { PreferredDistance } from './preferred-distance.ts'
+import type { PaceRange } from './pace-range.ts'
 import { PreferredRunTime } from './preferred-run-time.ts'
-import { Volume } from './volume.ts'
+import type { UsualDistance } from './usual-distance.ts'
 
 /** Everything a profile is made of — domain.md §3. An unset scalar is absent; an unset set is empty. */
 export type ProfileFields = {
@@ -13,33 +12,33 @@ export type ProfileFields = {
   displayName: string
   bio?: string
   avatarRef?: string
-  birthYear: number
+  birthYear?: number
   gender?: Gender
   area: Area
-  pace?: Pace
-  volume?: Volume
+  paceRange?: PaceRange
+  usualDistance?: UsualDistance
   experience?: Experience
-  preferredDistances: readonly PreferredDistance[]
   preferredRunTimes: readonly PreferredRunTime[]
+  gear: readonly string[]
 }
 
 /**
  * A partial edit. An absent key leaves the field alone; `null` clears it.
- * `displayName`, `birthYear` and `area` cannot be cleared — a profile cannot exist without them.
+ * `displayName` and `area` cannot be cleared — a profile cannot exist without them.
  * A set is replaced by sending a new array, never by sending null.
  */
 export type ProfileChanges = {
   displayName?: string
-  birthYear?: number
   bio?: string | null
   avatarRef?: string | null
+  birthYear?: number | null
   gender?: Gender | null
   area?: Area
-  pace?: Pace | null
-  volume?: Volume | null
+  paceRange?: PaceRange | null
+  usualDistance?: UsualDistance | null
   experience?: Experience | null
-  preferredDistances?: readonly PreferredDistance[]
   preferredRunTimes?: readonly PreferredRunTime[]
+  gear?: readonly string[]
 }
 
 /** Trim, then treat a value that is now empty as never given. Keeps "absent" the only unset state. */
@@ -70,22 +69,39 @@ function characters(text: string): number {
   return [...text].length
 }
 
+/**
+ * Gear — §4. Each item trimmed and measured; an item equal to an earlier one once trimmed is the
+ * same item, so it collapses into the first. The runner's order is kept: gear has no declared
+ * order to sort by. The count is checked after collapsing — it limits items, not keystrokes.
+ */
+function asGear(items: readonly string[]): readonly string[] {
+  const unique: string[] = []
+  for (const raw of items) {
+    const item = raw.trim()
+    ensure(characters(item) >= 1, 'gear', 'must not hold an empty item')
+    ensure(characters(item) <= 50, 'gear', 'must hold items of 50 characters or fewer')
+    if (!unique.includes(item)) unique.push(item)
+  }
+  ensure(unique.length <= 10, 'gear', 'must hold 10 items or fewer')
+  return Object.freeze(unique)
+}
+
 /** The aggregate root — domain.md §3. One per runner, loaded and saved as one unit, immutable. */
 export class Profile {
   readonly userId: string
   readonly displayName: string
-  readonly birthYear: number
   readonly area: Area
-  readonly preferredDistances: readonly PreferredDistance[]
   readonly preferredRunTimes: readonly PreferredRunTime[]
+  readonly gear: readonly string[]
 
   // `declare` so TypeScript emits no field. A plain `readonly bio?: string` would define the
   // key with value undefined on every instance, and §3 says an unset scalar is *absent*.
   declare readonly bio?: string
   declare readonly avatarRef?: string
+  declare readonly birthYear?: number
   declare readonly gender?: Gender
-  declare readonly pace?: Pace
-  declare readonly volume?: Volume
+  declare readonly paceRange?: PaceRange
+  declare readonly usualDistance?: UsualDistance
   declare readonly experience?: Experience
 
   constructor(fields: ProfileFields) {
@@ -103,10 +119,12 @@ export class Profile {
     const avatarRef = trimmed(fields.avatarRef)
     if (avatarRef !== undefined) ensure(characters(avatarRef) <= 128, 'avatarRef', 'must be 128 characters or fewer')
 
-    const thisYear = new Date().getFullYear()
-    ensure(Number.isInteger(fields.birthYear), 'birthYear', 'must be a whole number')
-    ensure(fields.birthYear >= 1900, 'birthYear', 'must not be earlier than 1900')
-    ensure(fields.birthYear <= thisYear, 'birthYear', `must not be later than ${thisYear}`)
+    if (fields.birthYear !== undefined) {
+      const thisYear = new Date().getFullYear()
+      ensure(Number.isInteger(fields.birthYear), 'birthYear', 'must be a whole number')
+      ensure(fields.birthYear >= 1900, 'birthYear', 'must not be earlier than 1900')
+      ensure(fields.birthYear <= thisYear, 'birthYear', `must not be later than ${thisYear}`)
+    }
 
     // Value objects validate themselves; the unions cannot, so the root checks them.
     if (fields.gender !== undefined) ensure(isGender(fields.gender), 'gender', 'is not a known value')
@@ -116,14 +134,14 @@ export class Profile {
     this.displayName = displayName
     if (bio !== undefined) this.bio = bio
     if (avatarRef !== undefined) this.avatarRef = avatarRef
-    this.birthYear = fields.birthYear
+    if (fields.birthYear !== undefined) this.birthYear = fields.birthYear
     if (fields.gender !== undefined) this.gender = fields.gender
     this.area = fields.area
-    if (fields.pace !== undefined) this.pace = fields.pace
-    if (fields.volume !== undefined) this.volume = fields.volume
+    if (fields.paceRange !== undefined) this.paceRange = fields.paceRange
+    if (fields.usualDistance !== undefined) this.usualDistance = fields.usualDistance
     if (fields.experience !== undefined) this.experience = fields.experience
-    this.preferredDistances = asSet(fields.preferredDistances)
     this.preferredRunTimes = asSet(fields.preferredRunTimes)
+    this.gear = asGear(fields.gear)
 
     Object.freeze(this)
   }
@@ -138,23 +156,24 @@ export class Profile {
 
     const bio = settle(changes.bio, this.bio)
     const avatarRef = settle(changes.avatarRef, this.avatarRef)
+    const birthYear = settle(changes.birthYear, this.birthYear)
     const gender = settle(changes.gender, this.gender)
-    const pace = settle(changes.pace, this.pace)
-    const volume = settle(changes.volume, this.volume)
+    const paceRange = settle(changes.paceRange, this.paceRange)
+    const usualDistance = settle(changes.usualDistance, this.usualDistance)
     const experience = settle(changes.experience, this.experience)
 
     return new Profile({
       userId: this.userId,
       displayName: changes.displayName ?? this.displayName,
-      birthYear: changes.birthYear ?? this.birthYear,
       area: changes.area ?? this.area,
-      preferredDistances: changes.preferredDistances ?? this.preferredDistances,
       preferredRunTimes: changes.preferredRunTimes ?? this.preferredRunTimes,
+      gear: changes.gear ?? this.gear,
       ...(bio !== undefined && { bio }),
       ...(avatarRef !== undefined && { avatarRef }),
+      ...(birthYear !== undefined && { birthYear }),
       ...(gender !== undefined && { gender }),
-      ...(pace !== undefined && { pace }),
-      ...(volume !== undefined && { volume }),
+      ...(paceRange !== undefined && { paceRange }),
+      ...(usualDistance !== undefined && { usualDistance }),
       ...(experience !== undefined && { experience }),
     })
   }

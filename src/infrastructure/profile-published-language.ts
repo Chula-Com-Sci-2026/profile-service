@@ -38,18 +38,23 @@ export function publicProfile(profile: Profile): Record<string, unknown> {
   return {
     userId: profile.userId,
     displayName: profile.displayName,
-    birthYear: profile.birthYear,
     areaCell: { latitude: cell.latitude, longitude: cell.longitude },
-    preferredDistances: profile.preferredDistances.map((d) => d.distance),
     preferredRunTimes: profile.preferredRunTimes.map((t) => ({
       dayOfWeek: t.dayOfWeek,
       timeOfDay: t.timeOfDay,
     })),
+    gear: [...profile.gear],
     ...(profile.bio !== undefined && { bio: profile.bio }),
     ...(profile.avatarRef !== undefined && { avatarRef: profile.avatarRef }),
+    ...(profile.birthYear !== undefined && { birthYear: profile.birthYear }),
     ...(profile.gender !== undefined && { gender: profile.gender }),
-    ...(profile.pace !== undefined && { pace: profile.pace.secondsPerKilometre }),
-    ...(profile.volume !== undefined && { volume: profile.volume.metresPerWeek }),
+    ...(profile.paceRange !== undefined && {
+      paceRange: {
+        fastest: profile.paceRange.fastest.secondsPerKilometre,
+        slowest: profile.paceRange.slowest.secondsPerKilometre,
+      },
+    }),
+    ...(profile.usualDistance !== undefined && { usualDistance: profile.usualDistance.metres }),
     ...(profile.experience !== undefined && { experience: profile.experience }),
   }
 }

@@ -47,11 +47,11 @@ Use these words in code, tests, API fields, commit messages, and conversation.
 | **Gender** | How a runner describes their gender. |
 | **Area** | Where a runner usually runs, as one point on the map. |
 | **Area cell** | An area rounded to about a kilometre: roughly where, not exactly where. |
-| **Pace** | How fast a runner runs, as time per distance. |
-| **Volume** | How far a runner typically runs in a week. |
+| **Pace range** | The fastest and slowest a runner usually runs, as time per kilometre. |
+| **Usual distance** | How far a runner usually runs in one run. |
 | **Experience** | How new or experienced a runner is. |
-| **Preferred distance** | Which running distances a runner prefers. |
 | **Preferred run time** | Which days and times of day a runner prefers to run. |
+| **Gear** | What a runner runs with, such as shoes or a watch. |
 
 ## 3. The aggregate
 
@@ -61,17 +61,17 @@ Profile (root)
 ├─ displayName        string                required
 ├─ bio                string
 ├─ avatarRef          string
-├─ birthYear          number                required
+├─ birthYear          number
 ├─ gender             Gender                               union
 ├─ area               Area                  required       class
-├─ pace               Pace                                 class
-├─ volume             Volume                               class
+├─ paceRange          PaceRange                            class
+├─ usualDistance      UsualDistance                        class
 ├─ experience         Experience                           union
-├─ preferredDistances PreferredDistance[]                  class
-└─ preferredRunTimes  PreferredRunTime[]                   class
+├─ preferredRunTimes  PreferredRunTime[]                   class
+└─ gear               string[]
 ```
 
-**One profile per runner.** `Profile` is the single aggregate root and the only entity here — there are no other aggregates in this context, and the whole profile is loaded and saved as one unit. Everything marked `union` or `class` is a value object: no identity, no lifecycle of its own, immutable, compared by value — the marker says only how it is implemented. The unmarked fields are plain primitives, the same kind of value but with no type of their own, so their rules are enforced by the `Profile` constructor instead. Of the fields a runner fills in, only `displayName`, `birthYear` and `area` are required; everything else is their choice, and an unset set is empty rather than absent.
+**One profile per runner.** `Profile` is the single aggregate root and the only entity here — there are no other aggregates in this context, and the whole profile is loaded and saved as one unit. Everything marked `union` or `class` is a value object: no identity, no lifecycle of its own, immutable, compared by value — the marker says only how it is implemented. The unmarked fields are plain primitives, the same kind of value but with no type of their own, so their rules are enforced by the `Profile` constructor instead. Of the fields a runner fills in, only `displayName` and `area` are required; everything else is their choice, and an unset set is empty rather than absent.
 
 ### Behaviour
 
@@ -91,11 +91,11 @@ Profile (root)
 | `birthYear` | Integer, 1900 to the current year. |
 | `gender` | One of `male` · `female` · `non_binary`. |
 | `area` | A point: latitude −90 to 90 and longitude −180 to 180, in degrees (WGS 84). |
-| `pace` | Integer seconds per kilometre, 150–900 (2:30–15:00 /km). |
-| `volume` | Integer metres per week, 0–500 000 (0–500 km). |
+| `paceRange` | A fastest and a slowest pace, each integer seconds per kilometre, 150–900 (2:30–15:00 /km). The fastest is not slower than the slowest; one steady pace gives both the same value. |
+| `usualDistance` | Integer metres, 1–50 000 (up to 50 km, Run Scheduling's limit for a run). |
 | `experience` | One of `beginner` · `intermediate` · `advanced`. |
-| `preferredDistances` | A set of `5k` · `10k` · `half_marathon` · `marathon`. |
 | `preferredRunTimes` | A set of pairs — a day `mon` · `tue` · `wed` · `thu` · `fri` · `sat` · `sun`, plus a time of day (below). |
+| `gear` | A set of up to 10 items, each 1–50 chars after trimming. Items keep the order the runner gave; an item equal to an earlier one after trimming is the same item. |
 
 Character counts are Unicode code points: an emoji counts as one character, not two.
 

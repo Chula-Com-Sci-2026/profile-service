@@ -29,9 +29,14 @@ const noRepeats =
   (items: T[]): boolean =>
     new Set(items.map(identify)).size === items.length
 
-const distances = z
-  .array(z.string())
-  .refine(noRepeats((distance: string) => distance), 'must not repeat a distance')
+/** A pace range: two numbers and nothing else. Which is faster, and whether both are in range, is §4's. */
+const paceRange = z.strictObject({
+  fastest: z.number(),
+  slowest: z.number(),
+})
+
+/** Exact repeats are shape (400); items equal only once trimmed are the domain's to collapse. */
+const gear = z.array(z.string()).refine(noRepeats((item: string) => item), 'must not repeat an item')
 
 type RunTimeItem = z.infer<typeof runTime>
 
@@ -45,36 +50,36 @@ const runTimes = z
 /** `ProfileWrite` in openapi.yaml — no `userId` in the body; it is the path parameter. */
 export const profileWrite = z.strictObject({
   displayName: z.string(),
-  birthYear: z.number(),
+  birthYear: z.number().optional(),
   bio: z.string().optional(),
   avatarRef: z.string().optional(),
   gender: z.string().optional(),
   area: point,
-  pace: z.number().optional(),
-  volume: z.number().optional(),
+  paceRange: paceRange.optional(),
+  usualDistance: z.number().optional(),
   experience: z.string().optional(),
-  preferredDistances: distances.optional(),
   preferredRunTimes: runTimes.optional(),
+  gear: gear.optional(),
 })
 
 /**
- * `ProfilePatch` in openapi.yaml. A patch body is *not* the resource shape: six fields accept
- * null to clear, `displayName`, `birthYear` and `area` do not — a profile cannot exist without
- * them — and a set is replaced by sending a new array, never by sending null. An area is
- * replaced whole, so both coordinates are required here too.
+ * `ProfilePatch` in openapi.yaml. A patch body is *not* the resource shape: seven fields accept
+ * null to clear, `displayName` and `area` do not — a profile cannot exist without them — and a
+ * set is replaced by sending a new array, never by sending null. An area and a pace range are
+ * each replaced whole, so every member is required here too.
  */
 export const profilePatch = z.strictObject({
   displayName: z.string().optional(),
-  birthYear: z.number().optional(),
+  birthYear: z.number().nullable().optional(),
   bio: z.string().nullable().optional(),
   avatarRef: z.string().nullable().optional(),
   gender: z.string().nullable().optional(),
   area: point.optional(),
-  pace: z.number().nullable().optional(),
-  volume: z.number().nullable().optional(),
+  paceRange: paceRange.nullable().optional(),
+  usualDistance: z.number().nullable().optional(),
   experience: z.string().nullable().optional(),
-  preferredDistances: distances.optional(),
   preferredRunTimes: runTimes.optional(),
+  gear: gear.optional(),
 })
 
 export type ProfileWriteBody = z.infer<typeof profileWrite>

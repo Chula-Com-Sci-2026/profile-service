@@ -1,11 +1,10 @@
 import { Area } from '../../domain/area.ts'
 import { toExperience } from '../../domain/experience.ts'
 import { toGender } from '../../domain/gender.ts'
-import { Pace } from '../../domain/pace.ts'
-import { PreferredDistance } from '../../domain/preferred-distance.ts'
+import { PaceRange } from '../../domain/pace-range.ts'
 import { PreferredRunTime } from '../../domain/preferred-run-time.ts'
 import type { ProfileChanges, ProfileFields } from '../../domain/profile.ts'
-import { Volume } from '../../domain/volume.ts'
+import { UsualDistance } from '../../domain/usual-distance.ts'
 import type { ProfilePatchBody, ProfileWriteBody } from './validators.ts'
 
 /**
@@ -19,15 +18,15 @@ export function toFields(userId: string, body: ProfileWriteBody): ProfileFields 
   return {
     userId,
     displayName: body.displayName,
-    birthYear: body.birthYear,
     area: new Area(body.area.latitude, body.area.longitude),
-    preferredDistances: (body.preferredDistances ?? []).map((d) => new PreferredDistance(d)),
     preferredRunTimes: (body.preferredRunTimes ?? []).map((t) => new PreferredRunTime(t.dayOfWeek, t.timeOfDay)),
+    gear: body.gear ?? [],
     ...(body.bio !== undefined && { bio: body.bio }),
     ...(body.avatarRef !== undefined && { avatarRef: body.avatarRef }),
+    ...(body.birthYear !== undefined && { birthYear: body.birthYear }),
     ...(body.gender !== undefined && { gender: toGender(body.gender) }),
-    ...(body.pace !== undefined && { pace: new Pace(body.pace) }),
-    ...(body.volume !== undefined && { volume: new Volume(body.volume) }),
+    ...(body.paceRange !== undefined && { paceRange: new PaceRange(body.paceRange.fastest, body.paceRange.slowest) }),
+    ...(body.usualDistance !== undefined && { usualDistance: new UsualDistance(body.usualDistance) }),
     ...(body.experience !== undefined && { experience: toExperience(body.experience) }),
   }
 }
@@ -41,16 +40,18 @@ export function toChanges(body: ProfilePatchBody): ProfileChanges {
     ...(body.avatarRef !== undefined && { avatarRef: body.avatarRef }),
     ...(body.gender !== undefined && { gender: body.gender === null ? null : toGender(body.gender) }),
     ...(body.area !== undefined && { area: new Area(body.area.latitude, body.area.longitude) }),
-    ...(body.pace !== undefined && { pace: body.pace === null ? null : new Pace(body.pace) }),
-    ...(body.volume !== undefined && { volume: body.volume === null ? null : new Volume(body.volume) }),
+    ...(body.paceRange !== undefined && {
+      paceRange: body.paceRange === null ? null : new PaceRange(body.paceRange.fastest, body.paceRange.slowest),
+    }),
+    ...(body.usualDistance !== undefined && {
+      usualDistance: body.usualDistance === null ? null : new UsualDistance(body.usualDistance),
+    }),
     ...(body.experience !== undefined && {
       experience: body.experience === null ? null : toExperience(body.experience),
-    }),
-    ...(body.preferredDistances !== undefined && {
-      preferredDistances: body.preferredDistances.map((d) => new PreferredDistance(d)),
     }),
     ...(body.preferredRunTimes !== undefined && {
       preferredRunTimes: body.preferredRunTimes.map((t) => new PreferredRunTime(t.dayOfWeek, t.timeOfDay)),
     }),
+    ...(body.gear !== undefined && { gear: body.gear }),
   }
 }

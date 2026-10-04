@@ -27,7 +27,7 @@ describe('updateProfile', () => {
 
     expect(updated.bio).toBeUndefined()
     expect(updated.gender).toBe('female')
-    expect(updated.pace?.secondsPerKilometre).toBe(330)
+    expect(updated.paceRange?.fastest.secondsPerKilometre).toBe(330)
   })
 
   it('never changes userId', async () => {

@@ -2,11 +2,10 @@ import { Area } from '../domain/area.ts'
 import { InvalidProfileFieldError } from '../domain/errors.ts'
 import { toExperience } from '../domain/experience.ts'
 import { toGender } from '../domain/gender.ts'
-import { Pace } from '../domain/pace.ts'
-import { PreferredDistance } from '../domain/preferred-distance.ts'
+import { PaceRange } from '../domain/pace-range.ts'
 import { PreferredRunTime } from '../domain/preferred-run-time.ts'
 import { Profile } from '../domain/profile.ts'
-import { Volume } from '../domain/volume.ts'
+import { UsualDistance } from '../domain/usual-distance.ts'
 import type { ProfileInsert, ProfileRow } from './schema.ts'
 
 /**
@@ -29,13 +28,18 @@ function asArray(value: unknown, field: string): unknown[] {
   return value
 }
 
-function asDistances(value: unknown): PreferredDistance[] {
-  return asArray(value, 'preferredDistances').map((member) => {
-    if (typeof member !== 'string') {
-      throw new InvalidProfileFieldError('preferredDistances', 'holds something that is not a distance')
-    }
-    return new PreferredDistance(member)
+function asGear(value: unknown): string[] {
+  return asArray(value, 'gear').map((member) => {
+    if (typeof member !== 'string') throw new InvalidProfileFieldError('gear', 'holds something that is not text')
+    return member
   })
+}
+
+/** The CHECK keeps both ends or neither; a row that somehow has one is still refused here. */
+function asPaceRange(fastest: number | null, slowest: number | null): PaceRange | undefined {
+  if (fastest === null && slowest === null) return undefined
+  if (fastest === null || slowest === null) throw new InvalidProfileFieldError('paceRange', 'is stored with one end missing')
+  return new PaceRange(fastest, slowest)
 }
 
 function asRunTimes(value: unknown): PreferredRunTime[] {
@@ -78,18 +82,19 @@ export function toDomain(row: ProfileRow): Profile {
 }
 
 function buildProfile(row: ProfileRow): Profile {
+  const paceRange = asPaceRange(row.paceFastest, row.paceSlowest)
   return new Profile({
     userId: row.userId,
     displayName: row.displayName,
-    birthYear: row.birthYear,
     area: new Area(row.areaLatitude, row.areaLongitude),
-    preferredDistances: asDistances(row.preferredDistances),
     preferredRunTimes: asRunTimes(row.preferredRunTimes),
+    gear: asGear(row.gear),
     ...(row.bio !== null && { bio: row.bio }),
     ...(row.avatarRef !== null && { avatarRef: row.avatarRef }),
+    ...(row.birthYear !== null && { birthYear: row.birthYear }),
     ...(row.gender !== null && { gender: toGender(row.gender) }),
-    ...(row.pace !== null && { pace: new Pace(row.pace) }),
-    ...(row.volume !== null && { volume: new Volume(row.volume) }),
+    ...(paceRange !== undefined && { paceRange }),
+    ...(row.usualDistance !== null && { usualDistance: new UsualDistance(row.usualDistance) }),
     ...(row.experience !== null && { experience: toExperience(row.experience) }),
   })
 }
@@ -100,17 +105,18 @@ export function toRow(profile: Profile): ProfileInsert {
     displayName: profile.displayName,
     bio: profile.bio ?? null,
     avatarRef: profile.avatarRef ?? null,
-    birthYear: profile.birthYear,
+    birthYear: profile.birthYear ?? null,
     gender: profile.gender ?? null,
     areaLatitude: profile.area.latitude,
     areaLongitude: profile.area.longitude,
-    pace: profile.pace?.secondsPerKilometre ?? null,
-    volume: profile.volume?.metresPerWeek ?? null,
+    paceFastest: profile.paceRange?.fastest.secondsPerKilometre ?? null,
+    paceSlowest: profile.paceRange?.slowest.secondsPerKilometre ?? null,
+    usualDistance: profile.usualDistance?.metres ?? null,
     experience: profile.experience ?? null,
-    preferredDistances: profile.preferredDistances.map((distance) => distance.distance),
     preferredRunTimes: profile.preferredRunTimes.map((time) => ({
       dayOfWeek: time.dayOfWeek,
       timeOfDay: time.timeOfDay,
     })),
+    gear: [...profile.gear],
   }
 }

@@ -1,21 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { Area } from '../../../src/domain/area.ts'
 import { InvalidProfileFieldError } from '../../../src/domain/errors.ts'
-import { Pace } from '../../../src/domain/pace.ts'
-import { PreferredDistance } from '../../../src/domain/preferred-distance.ts'
+import { PaceRange } from '../../../src/domain/pace-range.ts'
 import { PreferredRunTime } from '../../../src/domain/preferred-run-time.ts'
 import { Profile, type ProfileFields } from '../../../src/domain/profile.ts'
-import { Volume } from '../../../src/domain/volume.ts'
+import { UsualDistance } from '../../../src/domain/usual-distance.ts'
 
 /** A profile carrying only what §3 requires. Overrides add the optional half. */
 function aProfile(overrides: Partial<ProfileFields> = {}): Profile {
   return new Profile({
     userId: '7f3a9c2e15',
     displayName: 'Nok',
-    birthYear: 1994,
     area: new Area(13.7314, 100.5414),
-    preferredDistances: [],
     preferredRunTimes: [],
+    gear: [],
     ...overrides,
   })
 }
@@ -23,12 +21,13 @@ function aProfile(overrides: Partial<ProfileFields> = {}): Profile {
 const thisYear = new Date().getFullYear()
 
 describe('Profile — required fields', () => {
-  it('needs displayName, birthYear and area beyond the identity', () => {
+  it('needs only displayName and area beyond the identity', () => {
     const profile = aProfile()
     expect(profile.userId).toBe('7f3a9c2e15')
     expect(profile.area.equals(new Area(13.7314, 100.5414))).toBe(true)
     expect(profile.bio).toBeUndefined()
-    expect(profile.preferredDistances).toEqual([])
+    expect('birthYear' in profile).toBe(false)
+    expect(profile.gear).toEqual([])
   })
 
   it.each(['', '   '])('rejects %p as a userId', (userId) => {
@@ -93,9 +92,10 @@ describe('Profile — optional fields', () => {
   })
 
   it('holds value objects rather than bare numbers', () => {
-    const profile = aProfile({ pace: new Pace(300), volume: new Volume(45_000) })
-    expect(profile.pace?.secondsPerKilometre).toBe(300)
-    expect(profile.volume?.metresPerWeek).toBe(45_000)
+    const profile = aProfile({ paceRange: new PaceRange(300, 360), usualDistance: new UsualDistance(8_000) })
+    expect(profile.paceRange?.fastest.secondsPerKilometre).toBe(300)
+    expect(profile.paceRange?.slowest.secondsPerKilometre).toBe(360)
+    expect(profile.usualDistance?.metres).toBe(8_000)
   })
 })
 
@@ -111,25 +111,18 @@ describe('Profile — birthYear (§4: integer, 1900 to the current year)', () =>
   it('rejects a fractional year', () => {
     expect(() => aProfile({ birthYear: 1994.5 })).toThrow(InvalidProfileFieldError)
   })
+
+  it('is optional — left out, it is absent', () => {
+    expect('birthYear' in aProfile()).toBe(false)
+  })
 })
 
 describe('Profile — sets', () => {
   it('drops duplicates, because a set is not a list', () => {
     const profile = aProfile({
-      preferredDistances: [new PreferredDistance('10k'), new PreferredDistance('10k')],
+      preferredRunTimes: [new PreferredRunTime('mon', 'evening'), new PreferredRunTime('mon', 'evening')],
     })
-    expect(profile.preferredDistances).toHaveLength(1)
-  })
-
-  it('sorts into declared order, not alphabetical', () => {
-    const profile = aProfile({
-      preferredDistances: [
-        new PreferredDistance('marathon'),
-        new PreferredDistance('10k'),
-        new PreferredDistance('5k'),
-      ],
-    })
-    expect(profile.preferredDistances.map((d) => d.distance)).toEqual(['5k', '10k', 'marathon'])
+    expect(profile.preferredRunTimes).toHaveLength(1)
   })
 
   it('sorts run times by day, then time of day', () => {
@@ -152,6 +145,43 @@ describe('Profile — sets', () => {
   })
 })
 
+describe('Profile — gear (§4: up to 10 items, each 1–50 characters after trimming)', () => {
+  it('keeps the order the runner gave', () => {
+    expect(aProfile({ gear: ['Pegasus 41', 'Forerunner 265'] }).gear).toEqual(['Pegasus 41', 'Forerunner 265'])
+  })
+
+  it('trims each item', () => {
+    expect(aProfile({ gear: ['  Pegasus 41  '] }).gear).toEqual(['Pegasus 41'])
+  })
+
+  it('collapses items that are equal once trimmed into the first', () => {
+    expect(aProfile({ gear: ['Pegasus 41', ' Pegasus 41 ', 'Forerunner 265'] }).gear).toEqual([
+      'Pegasus 41',
+      'Forerunner 265',
+    ])
+  })
+
+  it.each(['', '   '])('rejects %p as an item', (item) => {
+    expect(() => aProfile({ gear: [item] })).toThrow(InvalidProfileFieldError)
+  })
+
+  it('rejects an item over 50 characters, counting code points', () => {
+    expect(() => aProfile({ gear: ['x'.repeat(51)] })).toThrow(InvalidProfileFieldError)
+    expect(aProfile({ gear: ['x'.repeat(49) + '🏃'] }).gear[0]).toHaveLength(51)
+  })
+
+  it('accepts 10 items and rejects 11', () => {
+    const items = Array.from({ length: 11 }, (_, i) => `item ${i}`)
+    expect(aProfile({ gear: items.slice(0, 10) }).gear).toHaveLength(10)
+    expect(() => aProfile({ gear: items })).toThrow(expect.objectContaining({ field: 'gear' }))
+  })
+
+  it('counts items after collapsing, so 11 entries naming 10 items are fine', () => {
+    const items = [...Array.from({ length: 10 }, (_, i) => `item ${i}`), ' item 0 ']
+    expect(aProfile({ gear: items }).gear).toHaveLength(10)
+  })
+})
+
 describe('Profile — immutability', () => {
   it('is frozen', () => {
     const profile = aProfile()
@@ -162,10 +192,10 @@ describe('Profile — immutability', () => {
   })
 
   it('freezes its sets too — and the compiler says so first', () => {
-    const profile = aProfile({ preferredDistances: [new PreferredDistance('5k')] })
+    const profile = aProfile({ gear: ['Pegasus 41'] })
     expect(() =>
       // @ts-expect-error a set is readonly: this must not compile, and must throw if it ever does
-      profile.preferredDistances.push(new PreferredDistance('10k')),
+      profile.gear.push('Forerunner 265'),
     ).toThrow(TypeError)
   })
 })

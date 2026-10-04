@@ -15,6 +15,13 @@
       "when": 1791087635370,
       "tag": "0001_area_as_point",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791097757376,
+      "tag": "0002_profile_fields",
+      "breakpoints": true
     }
   ]
 }

@@ -3,11 +3,10 @@ import { Ajv2020 } from 'ajv/dist/2020.js'
 import { parse } from 'yaml'
 import { describe, expect, it } from 'vitest'
 import { Area } from '../../../src/domain/area.ts'
-import { Pace } from '../../../src/domain/pace.ts'
+import { PaceRange } from '../../../src/domain/pace-range.ts'
 import { PreferredRunTime } from '../../../src/domain/preferred-run-time.ts'
-import { Volume } from '../../../src/domain/volume.ts'
-import { PreferredDistance } from '../../../src/domain/preferred-distance.ts'
 import { Profile } from '../../../src/domain/profile.ts'
+import { UsualDistance } from '../../../src/domain/usual-distance.ts'
 import {
   profileDeleted,
   profileUpdated,
@@ -31,9 +30,9 @@ const nok = new Profile({
   displayName: 'Nok',
   birthYear: 1994,
   area: new Area(13.731723456, 100.541532),
-  pace: new Pace(330),
-  preferredDistances: [new PreferredDistance('10k')],
+  paceRange: new PaceRange(330, 390),
   preferredRunTimes: [],
+  gear: ['Pegasus 41'],
 })
 
 describe('ProfileUpdated', () => {
@@ -69,8 +68,9 @@ describe('ProfileUpdated', () => {
     const data = publicProfile(nok)
 
     expect('bio' in data).toBe(false)
-    expect(data['pace']).toBe(330)
+    expect(data['paceRange']).toEqual({ fastest: 330, slowest: 390 })
     expect(data['preferredRunTimes']).toEqual([])
+    expect(data['gear']).toEqual(['Pegasus 41'])
   })
 
   it('obeys the ProfileUpdatedEvent schema in openapi.yaml', () => {
@@ -87,11 +87,11 @@ describe('ProfileUpdated', () => {
       birthYear: 1994,
       gender: 'female',
       area: new Area(13.731723456, 100.541532),
-      pace: new Pace(330),
-      volume: new Volume(42_000),
+      paceRange: new PaceRange(330, 390),
+      usualDistance: new UsualDistance(10_000),
       experience: 'intermediate',
-      preferredDistances: [new PreferredDistance('10k'), new PreferredDistance('half_marathon')],
       preferredRunTimes: [new PreferredRunTime('tue', 'early_morning')],
+      gear: ['Pegasus 41', 'Forerunner 265'],
     })
     const validate = schema('ProfileUpdatedEvent')
     expect(validate(profileUpdated(everything, at)), ajv.errorsText(validate.errors)).toBe(true)

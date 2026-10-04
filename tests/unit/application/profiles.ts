@@ -1,6 +1,5 @@
 import { Area } from '../../../src/domain/area.ts'
-import { Pace } from '../../../src/domain/pace.ts'
-import { PreferredDistance } from '../../../src/domain/preferred-distance.ts'
+import { PaceRange } from '../../../src/domain/pace-range.ts'
 import { Profile, type ProfileFields } from '../../../src/domain/profile.ts'
 
 /**
@@ -15,8 +14,8 @@ export function fieldsFor(overrides: Partial<ProfileFields> = {}): ProfileFields
     birthYear: 1994,
     area: new Area(13.7314, 100.5414),
     gender: 'female',
-    pace: new Pace(330),
-    preferredDistances: [new PreferredDistance('10k')],
+    paceRange: new PaceRange(330, 390),
+    gear: ['Pegasus 41'],
     preferredRunTimes: [],
     ...overrides,
   }

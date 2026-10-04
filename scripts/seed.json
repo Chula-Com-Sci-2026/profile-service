@@ -19,12 +19,11 @@
       "longitude": 100.5414
     },
     "experience": "intermediate",
-    "pace": 330,
-    "volume": 42000,
-    "preferredDistances": [
-      "10k",
-      "half_marathon"
-    ],
+    "paceRange": {
+      "fastest": 320,
+      "slowest": 345
+    },
+    "usualDistance": 10000,
     "preferredRunTimes": [
       {
         "dayOfWeek": "tue",
@@ -38,6 +37,10 @@
         "dayOfWeek": "sat",
         "timeOfDay": "morning"
       }
+    ],
+    "gear": [
+      "Nike Pegasus 41",
+      "Garmin Forerunner 165"
     ]
   },
   {
@@ -50,17 +53,20 @@
       "longitude": 100.559
     },
     "experience": "advanced",
-    "pace": 245,
-    "volume": 95000,
-    "preferredDistances": [
-      "half_marathon",
-      "marathon"
-    ],
+    "paceRange": {
+      "fastest": 240,
+      "slowest": 260
+    },
+    "usualDistance": 21000,
     "preferredRunTimes": [
       {
         "dayOfWeek": "sun",
         "timeOfDay": "early_morning"
       }
+    ],
+    "gear": [
+      "Nike Vaporfly 3",
+      "COROS Pace 3"
     ]
   },
   {
@@ -73,11 +79,11 @@
       "longitude": 100.553
     },
     "experience": "beginner",
-    "pace": 600,
-    "volume": 8000,
-    "preferredDistances": [
-      "5k"
-    ],
+    "paceRange": {
+      "fastest": 570,
+      "slowest": 630
+    },
+    "usualDistance": 5000,
     "preferredRunTimes": [
       {
         "dayOfWeek": "mon",
@@ -87,20 +93,25 @@
         "dayOfWeek": "wed",
         "timeOfDay": "evening"
       }
+    ],
+    "gear": [
+      "ASICS Gel-Contend 9"
     ]
   },
   {
     "userId": "5d02b9e73f",
     "displayName": "Ann",
-    "birthYear": 1987,
     "bio": "Night owl. Happy to pace anyone.",
     "area": {
       "latitude": 13.7314,
       "longitude": 100.5414
     },
     "experience": "advanced",
-    "pace": 300,
-    "volume": 60000,
+    "paceRange": {
+      "fastest": 300,
+      "slowest": 300
+    },
+    "usualDistance": 12000,
     "preferredRunTimes": [
       {
         "dayOfWeek": "tue",
