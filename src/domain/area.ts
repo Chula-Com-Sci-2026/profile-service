@@ -1,16 +1,70 @@
-import { InvalidProfileFieldError } from './errors.ts'
+import { ensure, InvalidProfileFieldError } from './errors.ts'
 
-/** The public place a runner usually runs — domain.md §4. */
+/** The park names an area used to be. Retired by the next commit, when every layer takes the point. */
 export const AREAS = ['lumphini', 'benchakitti', 'chatuchak'] as const
 
-export type Area = (typeof AREAS)[number]
+export type AreaName = (typeof AREAS)[number]
 
-export function isArea(value: unknown): value is Area {
+export function isArea(value: unknown): value is AreaName {
   return typeof value === 'string' && (AREAS as readonly string[]).includes(value)
 }
 
-/** Narrows a value arriving from a row or a request body. §4's list is the rule, and it lives here. */
-export function toArea(value: string): Area {
+export function toArea(value: string): AreaName {
   if (!isArea(value)) throw new InvalidProfileFieldError('area', `must be one of ${AREAS.join(', ')}`)
   return value
+}
+
+/** Where a runner usually runs, as one point on the map — domain.md §4: degrees, WGS 84. */
+export class Area {
+  readonly latitude: number
+  readonly longitude: number
+
+  constructor(latitude: number, longitude: number) {
+    // NaN fails both comparisons, and so does an infinity, so the range is the whole check.
+    ensure(latitude >= -90 && latitude <= 90, 'area', 'latitude must be between -90 and 90')
+    ensure(longitude >= -180 && longitude <= 180, 'area', 'longitude must be between -180 and 180')
+    this.latitude = latitude
+    this.longitude = longitude
+    Object.freeze(this)
+  }
+
+  equals(other: Area): boolean {
+    return this.latitude === other.latitude && this.longitude === other.longitude
+  }
+
+  /** What other runners are shown instead of this point — domain.md §4 "Area cells". */
+  cell(): AreaCell {
+    return new AreaCell(this)
+  }
+}
+
+/**
+ * An area rounded to about a kilometre — domain.md §4 "Area cells": the point nearest the area
+ * whose latitude and longitude are both multiples of 0.01°.
+ *
+ * Built from an `Area` and nothing else, so a cell can never be made from exact numbers that
+ * skipped the rounding.
+ */
+export class AreaCell {
+  readonly latitude: number
+  readonly longitude: number
+
+  constructor(area: Area) {
+    this.latitude = toHundredths(area.latitude)
+    this.longitude = toHundredths(area.longitude)
+    Object.freeze(this)
+  }
+
+  equals(other: AreaCell): boolean {
+    return this.latitude === other.latitude && this.longitude === other.longitude
+  }
+}
+
+/**
+ * Rounding each coordinate on its own gives the nearest grid point. A whole number of hundredths
+ * divided by 100 is the closest double to that decimal, so it prints with at most two places.
+ * Exact halves follow floating point (`1.005` → `1`) — deterministic, which is what matters.
+ */
+function toHundredths(degrees: number): number {
+  return Math.round(degrees * 100) / 100
 }

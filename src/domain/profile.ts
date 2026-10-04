@@ -1,4 +1,4 @@
-import { isArea, type Area } from './area.ts'
+import { isArea, type AreaName } from './area.ts'
 import { ensure } from './errors.ts'
 import { isExperience, type Experience } from './experience.ts'
 import { isGender, type Gender } from './gender.ts'
@@ -15,7 +15,7 @@ export type ProfileFields = {
   avatarRef?: string
   birthYear: number
   gender?: Gender
-  area?: Area
+  area?: AreaName
   pace?: Pace
   volume?: Volume
   experience?: Experience
@@ -34,7 +34,7 @@ export type ProfileChanges = {
   bio?: string | null
   avatarRef?: string | null
   gender?: Gender | null
-  area?: Area | null
+  area?: AreaName | null
   pace?: Pace | null
   volume?: Volume | null
   experience?: Experience | null
@@ -83,7 +83,7 @@ export class Profile {
   declare readonly bio?: string
   declare readonly avatarRef?: string
   declare readonly gender?: Gender
-  declare readonly area?: Area
+  declare readonly area?: AreaName
   declare readonly pace?: Pace
   declare readonly volume?: Volume
   declare readonly experience?: Experience
