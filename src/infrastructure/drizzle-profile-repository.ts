@@ -24,6 +24,42 @@ function isUniqueViolation(error: unknown): boolean {
   return false
 }
 
+/** The innermost error in a cause chain: the driver's own report, beneath every wrapper. */
+function rootCause(error: unknown): unknown {
+  const seen = new Set<unknown>()
+  let current = error
+  while (!seen.has(current)) {
+    seen.add(current)
+    const next = (current as { cause?: unknown } | null)?.cause
+    if (next === null || next === undefined) return current
+    current = next
+  }
+  return current
+}
+
+/**
+ * A write the database refused, with the row it was carrying left out.
+ *
+ * drizzle puts a failed query's parameters in its error's message, stack and `params`, and
+ * Postgres's own `detail` can echo the failing row — so the error handler's log line would carry
+ * the runner's exact area, which domain.md keeps inside this service. This keeps what diagnoses
+ * the failure — the statement, the driver's message and its SQLSTATE — and drops the values.
+ */
+export class ProfileWriteFailedError extends Error {
+  readonly query: string
+  readonly code: string | undefined
+
+  constructor(error: unknown) {
+    const root = rootCause(error)
+    const reason = root instanceof Error ? root.message : String(root)
+    const code = (root as { code?: unknown } | null)?.code
+    super(`could not write the profile: ${reason}`)
+    this.name = 'ProfileWriteFailedError'
+    this.query = String((error as { query?: unknown } | null)?.query ?? '')
+    this.code = typeof code === 'string' ? code : undefined
+  }
+}
+
 export class DrizzleProfileRepository implements ProfileRepository {
   readonly #db: NodePgDatabase
 
@@ -42,16 +78,20 @@ export class DrizzleProfileRepository implements ProfileRepository {
       await this.#db.insert(profiles).values(toRow(profile))
     } catch (error) {
       if (isUniqueViolation(error)) throw new ProfileAlreadyExistsError(profile.userId)
-      throw error
+      throw new ProfileWriteFailedError(error)
     }
   }
 
   async update(profile: Profile): Promise<boolean> {
-    const result = await this.#db
-      .update(profiles)
-      .set(toRow(profile))
-      .where(eq(profiles.userId, profile.userId))
-    return (result.rowCount ?? 0) > 0
+    try {
+      const result = await this.#db
+        .update(profiles)
+        .set(toRow(profile))
+        .where(eq(profiles.userId, profile.userId))
+      return (result.rowCount ?? 0) > 0
+    } catch (error) {
+      throw new ProfileWriteFailedError(error)
+    }
   }
 
   async delete(userId: string): Promise<boolean> {
