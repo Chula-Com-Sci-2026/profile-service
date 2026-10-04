@@ -32,7 +32,8 @@ export type FailedStep = { stage: 'token' | 'delivery'; reason: string }
  */
 export class EventNotDeliveredError extends Error {
   readonly eventId: string
-  readonly type: string
+  /** Not `type`: pino writes the error's class name there and would overwrite it. */
+  readonly eventType: string
   readonly subject: string
   readonly subscriber: string
   readonly attempts: number
@@ -54,7 +55,7 @@ export class EventNotDeliveredError extends Error {
     )
     this.name = 'EventNotDeliveredError'
     this.eventId = event.id
-    this.type = event.type
+    this.eventType = event.type
     this.subject = event.subject
     this.subscriber = subscriber
     this.attempts = attempts

@@ -109,7 +109,7 @@ describe('httpProfileEvents — retrying (ADR-0019: a short timeout and a few re
     const error = await publisher.updated(nok).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(EventNotDeliveredError)
-    expect(error).toMatchObject({ type: 'ProfileUpdated', subject: '7f3a9c2e15', attempts: 3, status: 503, requestId: 'abc123' })
+    expect(error).toMatchObject({ eventType: 'ProfileUpdated', subject: '7f3a9c2e15', attempts: 3, status: 503, requestId: 'abc123' })
     const logged = JSON.stringify(stdSerializers.err(error as Error))
     expect(logged).not.toContain('13.73')
     expect(logged).not.toContain('Nok')
@@ -220,5 +220,18 @@ describe('logUndelivered — the log line for a lost event', () => {
     const lines: Record<string, unknown>[] = []
     logUndelivered({ error: (fields) => lines.push(fields as Record<string, unknown>) }, () => 'xyz789')('7f3a9c2e15', new Error('boom'))
     expect(lines[0]?.['requestId']).toBe('xyz789')
+  })
+})
+
+describe('EventNotDeliveredError — as pino writes it', () => {
+  it('keeps the event type, which pino would overwrite with the class name under `type`', async () => {
+    const server = await discovery(() => ({ status: 400 }))
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+
+    const error = await publisher.updated(nok).catch((e: unknown) => e)
+    const logged = stdSerializers.err(error as Error) as unknown as Record<string, unknown>
+
+    expect(logged['type']).toBe('EventNotDeliveredError')
+    expect(logged['eventType']).toBe('ProfileUpdated')
   })
 })
