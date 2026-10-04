@@ -599,14 +599,22 @@ describe('field visibility — FR-2.8', () => {
 
   it('200 the owner gets every field and the hidden set, even with everything hidden', async () => {
     const everythingHidden = ['bio', 'birthYear', 'gender', 'paceRange', 'usualDistance', 'experience', 'preferredRunTimes', 'gear']
-    await givenAProfile(NOK, { ...full, hiddenFields: everythingHidden })
+    const everyField = {
+      ...full,
+      avatarRef: `avatars/${NOK}/abc`,
+      usualDistance: 10000,
+      experience: 'intermediate',
+      preferredRunTimes: [{ dayOfWeek: 'sat', timeOfDay: 'early_morning' }],
+      hiddenFields: everythingHidden,
+    }
+    await givenAProfile(NOK, everyField)
     const response = await as(NOK, `/v1/profiles/${NOK}`)
     const body = (await response.clone().json()) as Record<string, unknown>
     await expectContract('getProfile', 200, response)
 
     expectSchema('Profile', body)
-    expect(body['gender']).toBe('female')
-    expect(body['hiddenFields']).toEqual(everythingHidden)
+    // Every field that was sent comes back to its owner, hidden or not.
+    expect(body).toMatchObject(everyField)
   })
 
   it('200 PATCH hides a field from other runners, and publishes the change', async () => {
@@ -637,6 +645,14 @@ describe('sets are sets', () => {
   it('400 rather than silently deduplicating what the client sent', async () => {
     const response = await put(NOK, { ...minimal, gear: ['Pegasus 41', 'Pegasus 41'] })
     await expectContract('createProfile', 400, response)
+  })
+
+  it('201 for gear that differs only by surrounding spaces — the domain collapses it, the edge does not refuse it', async () => {
+    const response = await put(NOK, { ...minimal, gear: ['Pegasus 41', ' Pegasus 41 '] })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('createProfile', 201, response)
+
+    expect(body['gear']).toEqual(['Pegasus 41'])
   })
 
   it('400 for a repeated day and time', async () => {
