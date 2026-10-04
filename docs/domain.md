@@ -45,7 +45,8 @@ Use these words in code, tests, API fields, commit messages, and conversation.
 | **Avatar reference** | A key to a runner's profile image in this service's object storage. |
 | **Birth year** | The year a runner was born. |
 | **Gender** | How a runner describes their gender. |
-| **Area** | The public place a runner usually runs. |
+| **Area** | Where a runner usually runs, as one point on the map. |
+| **Area cell** | An area rounded to about a kilometre: roughly where, not exactly where. |
 | **Pace** | How fast a runner runs, as time per distance. |
 | **Volume** | How far a runner typically runs in a week. |
 | **Experience** | How new or experienced a runner is. |
@@ -62,7 +63,7 @@ Profile (root)
 ├─ avatarRef          string
 ├─ birthYear          number                required
 ├─ gender             Gender                               union
-├─ area               Area                                 union
+├─ area               Area                  required       class
 ├─ pace               Pace                                 class
 ├─ volume             Volume                               class
 ├─ experience         Experience                           union
@@ -70,7 +71,7 @@ Profile (root)
 └─ preferredRunTimes  PreferredRunTime[]                   class
 ```
 
-**One profile per runner.** `Profile` is the single aggregate root and the only entity here — there are no other aggregates in this context, and the whole profile is loaded and saved as one unit. Everything marked `union` or `class` is a value object: no identity, no lifecycle of its own, immutable, compared by value — the marker says only how it is implemented. The unmarked fields are plain primitives, the same kind of value but with no type of their own, so their rules are enforced by the `Profile` constructor instead. Of the fields a runner fills in, only `displayName` and `birthYear` are required; everything else is their choice, and an unset set is empty rather than absent.
+**One profile per runner.** `Profile` is the single aggregate root and the only entity here — there are no other aggregates in this context, and the whole profile is loaded and saved as one unit. Everything marked `union` or `class` is a value object: no identity, no lifecycle of its own, immutable, compared by value — the marker says only how it is implemented. The unmarked fields are plain primitives, the same kind of value but with no type of their own, so their rules are enforced by the `Profile` constructor instead. Of the fields a runner fills in, only `displayName`, `birthYear` and `area` are required; everything else is their choice, and an unset set is empty rather than absent.
 
 ### Behaviour
 
@@ -89,7 +90,7 @@ Profile (root)
 | `avatarRef` | ≤ 128 chars. |
 | `birthYear` | Integer, 1900 to the current year. |
 | `gender` | One of `male` · `female` · `non_binary`. |
-| `area` | One of `lumphini` · `benchakitti` · `chatuchak`. |
+| `area` | A point: latitude −90 to 90 and longitude −180 to 180, in degrees (WGS 84). |
 | `pace` | Integer seconds per kilometre, 150–900 (2:30–15:00 /km). |
 | `volume` | Integer metres per week, 0–500 000 (0–500 km). |
 | `experience` | One of `beginner` · `intermediate` · `advanced`. |
@@ -110,6 +111,10 @@ All times are Bangkok local time (UTC+7).
 | `afternoon` | 14:00–17:00 |
 | `evening` | 17:00–20:00 |
 | `night` | 20:00–05:00 |
+
+### Area cells
+
+An area's cell is the point nearest it whose latitude and longitude are both multiples of 0.01°. A cell is about 1.1 km across in Bangkok.
 
 ## 5. Invariants
 
