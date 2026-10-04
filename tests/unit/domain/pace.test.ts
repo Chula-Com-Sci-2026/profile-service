@@ -15,8 +15,8 @@ describe('Pace — §4: integer seconds per kilometre, 150–900', () => {
     expect(() => new Pace(seconds)).toThrow(InvalidProfileFieldError)
   })
 
-  it('names the field it rejected', () => {
-    expect(() => new Pace(10)).toThrow(expect.objectContaining({ field: 'pace' }))
+  it('names paceRange as the field — a pace is only ever one end of a range', () => {
+    expect(() => new Pace(10)).toThrow(expect.objectContaining({ field: 'paceRange' }))
   })
 
   it('is compared by value, not identity', () => {
