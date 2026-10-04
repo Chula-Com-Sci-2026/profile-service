@@ -11,6 +11,9 @@ info:
     which is why creation is a `PUT`, not a `POST` to a collection. There is no
     collection: profiles cannot be listed or searched.
 
+    It also sends two events to the services that subscribe — `ProfileUpdated` and
+    `ProfileDeleted` — described under `webhooks`.
+
     Text fields are trimmed before their length rules apply, so whitespace alone counts
     as empty.
 
@@ -214,6 +217,56 @@ paths:
             application/yaml: {}
         default: { $ref: '#/components/responses/Problem' }
 
+webhooks:
+  ProfileUpdated:
+    post:
+      summary: A profile was created or changed
+      description: >-
+        Sent to every subscriber listed in this service's configuration (ADR-0019) after the
+        change is saved, and awaited — a synchronous call, not a broker. `data` is the profile as
+        another runner sees it, the area only as its cell. Each attempt has a 1 s timeout; three
+        attempts, retried on a network error, a timeout, 408, 429 or 5xx, not on any other 4xx.
+        A subscriber still down after them loses the event (ADR-0019). Deduplicate by `id`; keep
+        the snapshot with the latest `time` per `subject`. A breaking change to `data` moves
+        `dataschema` to `:2`; an added optional field does not.
+      security:
+        - serviceToken: []
+      parameters:
+        - name: X-Request-Id
+          in: header
+          required: true
+          description: The correlation id of the request that caused the event, or a fresh one.
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/cloudevents+json:
+            schema: { $ref: '#/components/schemas/ProfileUpdatedEvent' }
+      responses:
+        '2XX': { description: Delivered. Any 2xx counts. }
+
+  ProfileDeleted:
+    post:
+      summary: A profile was removed
+      description: >-
+        Sent like ProfileUpdated, after a profile is removed. It carries no `data`; `subject`
+        names the runner. Drop the candidate.
+      security:
+        - serviceToken: []
+      parameters:
+        - name: X-Request-Id
+          in: header
+          required: true
+          description: The correlation id of the request that caused the event, or a fresh one.
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/cloudevents+json:
+            schema: { $ref: '#/components/schemas/ProfileDeletedEvent' }
+      responses:
+        '2XX': { description: Delivered. Any 2xx counts. }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -226,6 +279,15 @@ components:
         403 responses below compare it against the `userId` in the path. The same comparison
         decides whether a profile is returned with its exact `area` or with `areaCell` alone.
         Ownership is an access rule of this contract; domain.md is silent on who may act.
+
+    serviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        On the events this service sends: a short-lived JWT the Identity Service issues to this
+        service through OAuth 2.0 client credentials (ADR-0014). Its subject is the calling
+        service, not a runner. Subscribers verify it with Identity's public keys.
 
   responses:
     Profile:
@@ -344,3 +406,45 @@ components:
         title:  { type: string }
         status: { type: integer }
         detail: { type: string, description: 'Human prose, for people. Do not parse.' }
+
+    CloudEvent:
+      type: object
+      description: >-
+        CloudEvents 1.0, structured mode: the envelope every event travels in, the same over
+        HTTP now and on a broker later.
+      required: [specversion, id, source, type, time, subject, dataschema]
+      properties:
+        specversion:     { const: '1.0' }
+        id:              { type: string, minLength: 1, description: Unique per event. Deduplicate by it. }
+        source:          { const: profile-service }
+        type:            { type: string }
+        time:            { type: string, minLength: 1, description: When the change was saved. RFC 3339, UTC. }
+        subject:         { type: string, minLength: 1, maxLength: 64, description: The runner's userId. }
+        datacontenttype: { const: application/json }
+        dataschema:      { type: string, minLength: 1, description: Names the shape of `data` and its version. }
+
+    ProfileUpdatedEvent:
+      allOf: [{ $ref: '#/components/schemas/CloudEvent' }]
+      required: [datacontenttype, data]
+      unevaluatedProperties: false
+      properties:
+        type:       { const: ProfileUpdated }
+        dataschema: { const: 'urn:cant-run-alone:profile-service:ProfileUpdated:1' }
+        data:       { $ref: '#/components/schemas/PublicProfile' }
+
+    ProfileDeletedEvent:
+      allOf: [{ $ref: '#/components/schemas/CloudEvent' }]
+      unevaluatedProperties: false
+      properties:
+        type:            { const: ProfileDeleted }
+        dataschema:      { const: 'urn:cant-run-alone:profile-service:ProfileDeleted:1' }
+        datacontenttype: false
+        data:            false
+
+    PublicProfile:
+      description: >-
+        The profile as another runner sees it: the `Profile` response with `area` forbidden.
+        When per-field visibility arrives, it narrows this to the fields a runner made public.
+      allOf: [{ $ref: '#/components/schemas/Profile' }]
+      properties:
+        area: false
