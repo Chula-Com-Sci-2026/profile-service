@@ -154,6 +154,21 @@ describe('loadConfig — profile events', () => {
     )
   })
 
+  it.each(['buddy-discovery:8080/internal/events', 'localhost:4100/events', 'ftp://discovery/events'])(
+    'refuses %s — it parses as a URL, but no POST could ever reach it',
+    (subscriber) => {
+      expect(() => loadConfig({ ...complete, ...publishing, EVENT_SUBSCRIBERS: subscriber })).toThrow(
+        /EVENT_SUBSCRIBERS must use http or https/,
+      )
+    },
+  )
+
+  it('refuses credentials in a URL, without repeating them', () => {
+    const attempt = () => loadConfig({ ...complete, ...publishing, IDENTITY_TOKEN_URL: 'http://user:hunter2@identity/token' })
+    expect(attempt).toThrow(/IDENTITY_TOKEN_URL must not carry credentials/)
+    expect(attempt).not.toThrow(/hunter2/)
+  })
+
   it('is loadable on its own, for the seed', () => {
     expect(loadEventPublishing({})).toBeUndefined()
     expect(loadEventPublishing(publishing)?.clientId).toBe('profile-service')

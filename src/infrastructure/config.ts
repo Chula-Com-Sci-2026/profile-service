@@ -133,11 +133,27 @@ function eventsFrom(env: Environment, problems: string[]): EventPublishingConfig
   }
   for (const subscriber of subscribers) {
     if (!URL.canParse(subscriber)) problems.push(`EVENT_SUBSCRIBERS must list URLs, not ${JSON.stringify(subscriber)}`)
+    else problems.push(...httpProblems('EVENT_SUBSCRIBERS', subscriber))
   }
-  if (identityTokenUrl.length > 0 && !URL.canParse(identityTokenUrl)) {
-    problems.push(`IDENTITY_TOKEN_URL must be a URL, not ${JSON.stringify(identityTokenUrl)}`)
+  if (identityTokenUrl.length > 0) {
+    if (!URL.canParse(identityTokenUrl)) {
+      problems.push(`IDENTITY_TOKEN_URL must be a URL, not ${JSON.stringify(identityTokenUrl)}`)
+    } else problems.push(...httpProblems('IDENTITY_TOKEN_URL', identityTokenUrl))
   }
   return { subscribers, identityTokenUrl, clientId, clientSecret }
+}
+
+/**
+ * A URL that parses is not yet one a POST can reach: `localhost:4100/events` parses, with
+ * `localhost:` as its scheme. Refused here, at startup, rather than by every delivery after it.
+ * Credentials are refused without being repeated, so the refusal cannot leak them into a log.
+ */
+function httpProblems(name: string, raw: string): string[] {
+  const url = new URL(raw)
+  const problems: string[] = []
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') problems.push(`${name} must use http or https, not ${url.protocol}`)
+  if (url.username !== '' || url.password !== '') problems.push(`${name} must not carry credentials`)
+  return problems
 }
 
 /** Events alone, for the seed — it publishes what it loads but has no use for an Identity JWKS. */
