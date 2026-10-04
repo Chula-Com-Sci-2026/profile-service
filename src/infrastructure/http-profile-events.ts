@@ -146,8 +146,11 @@ export function httpProfileEvents(options: HttpProfileEventsOptions): ProfileEve
     const results = await Promise.allSettled(
       options.subscribers.map((subscriber) => deliver(event, subscriber, requestId, options)),
     )
-    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (failed !== undefined) throw failed.reason
+    // Each subscriber that failed is its own outage, so each is reported: one failure as itself,
+    // several as an AggregateError that logUndelivered writes out one line apiece.
+    const failures = results.flatMap((result) => (result.status === 'rejected' ? [result.reason as unknown] : []))
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, `${event.type} ${event.id} reached no subscriber of ${failures.length}`)
   }
 
   return {
@@ -166,7 +169,9 @@ export type ErrorLog = { error: (fields: object, message: string) => void }
  */
 export function logUndelivered(log: ErrorLog, currentRequestId: () => string | undefined) {
   return (userId: string, error: unknown): void => {
-    const requestId = error instanceof EventNotDeliveredError ? error.requestId : currentRequestId()
-    log.error({ err: error, userId, requestId }, 'a profile event was not delivered')
+    for (const failure of error instanceof AggregateError ? error.errors : [error]) {
+      const requestId = failure instanceof EventNotDeliveredError ? failure.requestId : currentRequestId()
+      log.error({ err: failure, userId, requestId }, 'a profile event was not delivered')
+    }
   }
 }

@@ -235,3 +235,40 @@ describe('EventNotDeliveredError — as pino writes it', () => {
     expect(logged['eventType']).toBe('ProfileUpdated')
   })
 })
+
+describe('httpProfileEvents — several subscribers failing', () => {
+  it('reports every subscriber that failed, not only the first', async () => {
+    const one = await discovery(() => ({ status: 503 }))
+    const two = await discovery(() => ({ status: 400 }))
+    const publisher = httpProfileEvents({ subscribers: [one.url, two.url], tokens: tokens().fake, currentRequestId: () => 'abc123', ...fast })
+
+    const error = await publisher.updated(nok).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(AggregateError)
+    const failures = (error as AggregateError).errors as EventNotDeliveredError[]
+    expect(failures.map((f) => f.subscriber)).toEqual([one.url, two.url])
+    expect(failures.map((f) => f.status)).toEqual([503, 400])
+  })
+
+  it('still reports a single failure as itself', async () => {
+    const up = await discovery(() => ({ status: 202 }))
+    const down = await discovery(() => ({ status: 400 }))
+    const publisher = httpProfileEvents({ subscribers: [up.url, down.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+
+    await expect(publisher.updated(nok)).rejects.toBeInstanceOf(EventNotDeliveredError)
+  })
+
+  it('logs one line per subscriber that failed, each with the request id', async () => {
+    const one = await discovery(() => ({ status: 503 }))
+    const two = await discovery(() => ({ status: 503 }))
+    const publisher = httpProfileEvents({ subscribers: [one.url, two.url], tokens: tokens().fake, currentRequestId: () => 'abc123', ...fast })
+    const error = await publisher.updated(nok).catch((e: unknown) => e)
+    const lines: Record<string, unknown>[] = []
+
+    logUndelivered({ error: (fields) => lines.push(fields as Record<string, unknown>) }, () => undefined)('7f3a9c2e15', error)
+
+    expect(lines).toHaveLength(2)
+    expect(lines.map((line) => (line['err'] as EventNotDeliveredError).subscriber)).toEqual([one.url, two.url])
+    expect(lines.map((line) => line['requestId'])).toEqual(['abc123', 'abc123'])
+  })
+})
