@@ -75,6 +75,9 @@ there: `npm run db:migrate` fails, or under `docker compose up` the `migrate` co
 `profile-service` never starts. Throw the database away — it is disposable — with
 `npm run db:reset`, then repeat the `docker compose up`, `db:migrate` and `db:seed` lines above.
 
+The same goes once after the move to PostgreSQL 16: a database the old 17 image created will not
+start under 16, and `db:reset` is what replaces it.
+
 **Port 3000 has one owner** — the container, or `npm run dev`. Stop one before starting the
 other; that is what the first line does, and it is a no-op if nothing was running. Skip it and
 you get `EADDRINUSE`.

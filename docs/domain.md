@@ -123,7 +123,7 @@ An area's cell is the point nearest it whose latitude and longitude are both mul
 
 ### Public card
 
-`userId`, `displayName`, `avatarRef` and the area cell are always on it; the exact area never is. Every other field is on it when it is set and not hidden. A hidden field is absent, never null. A field may be hidden while unset, and stays hidden once set.
+`userId`, `displayName`, `avatarRef` and the area cell are always on it; the exact area never is. Every other field is on it unless hidden — a scalar when it is set, a set always, `[]` when empty. A hidden field is absent, never null. A field may be hidden while unset, and stays hidden once set.
 
 ## 5. Invariants
 

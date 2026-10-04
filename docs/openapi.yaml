@@ -292,7 +292,8 @@ components:
         A JWT issued by the Identity Service and verified locally on every request — not
         trusted because a gateway forwarded it. Its subject is the caller's `userId`, and the
         403 responses below compare it against the `userId` in the path. The same comparison
-        decides whether a profile is returned with its exact `area` or with `areaCell` alone.
+        decides whether a profile is returned whole, exact `area` and `hiddenFields` included, or
+        as its public card.
         Ownership is an access rule of this contract; domain.md is silent on who may act.
 
     serviceToken:
@@ -493,8 +494,9 @@ components:
       type: object
       description: >-
         A profile as other runners see it — the team's "public card". `userId`, `displayName`,
-        `areaCell` and, when set, `avatarRef` are always here; every other field is here when it
-        is set and not hidden. A hidden field is absent, never null. The exact area and the
+        `areaCell` and, when set, `avatarRef` are always here; every other field is here unless
+        hidden — a scalar when set, a set always (`[]` when empty). A hidden field is absent,
+        never null. The exact area and the
         hidden set are never here.
       additionalProperties: false
       required: [userId, displayName, areaCell]
