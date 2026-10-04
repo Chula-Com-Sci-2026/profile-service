@@ -81,9 +81,37 @@ describe('identityServiceTokens — when Identity will not give one', () => {
     expect(JSON.stringify({ message: (error as Error).message, stack: (error as Error).stack })).not.toContain(SECRET)
   })
 
-  it('rejects an answer without access_token and expires_in', async () => {
+  it('rejects an answer without access_token', async () => {
     const server = await identity(() => ({ status: 200, json: { token: 'wrong-shape' } }))
 
     await expect(identityServiceTokens(options(server.url)).token()).rejects.toThrow(ServiceTokenError)
+  })
+})
+
+describe('identityServiceTokens — an answer without expires_in', () => {
+  it('uses the token but keeps nothing — RFC 6749 only recommends expires_in, and a guess could go stale', async () => {
+    const server = await identity((index) => ({ status: 200, json: { access_token: `t${index + 1}` } }))
+    const tokens = identityServiceTokens(options(server.url, () => 0))
+
+    expect(await tokens.token()).toBe('t1')
+    expect(await tokens.token()).toBe('t2')
+  })
+})
+
+describe('identityServiceTokens — concurrent askers', () => {
+  it('share one request to Identity rather than each sending their own', async () => {
+    const server = await identity(() => ({ status: 200, json: { access_token: 't1', expires_in: 300 } }))
+    const tokens = identityServiceTokens(options(server.url, () => 0))
+
+    expect(await Promise.all([tokens.token(), tokens.token(), tokens.token()])).toEqual(['t1', 't1', 't1'])
+    expect(server.received).toHaveLength(1)
+  })
+
+  it('ask again after a shared request fails', async () => {
+    const server = await identity((index) => (index === 0 ? { status: 503 } : { status: 200, json: { access_token: 't2', expires_in: 300 } }))
+    const tokens = identityServiceTokens(options(server.url, () => 0))
+
+    await expect(Promise.all([tokens.token(), tokens.token()])).rejects.toThrow(ServiceTokenError)
+    expect(await tokens.token()).toBe('t2')
   })
 })

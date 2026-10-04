@@ -39,35 +39,47 @@ const REFRESH_MARGIN_SECONDS = 30
 export function identityServiceTokens(options: ServiceTokenOptions): ServiceTokens {
   const now = options.now ?? Date.now
   let cached: { value: string; refreshAt: number } | undefined
+  // Concurrent writes on an empty cache share one request rather than each sending their own.
+  let inFlight: Promise<string> | undefined
 
-  return {
-    async token(signal) {
-      const asked = now()
-      if (cached !== undefined && asked < cached.refreshAt) return cached.value
+  async function ask(signal: AbortSignal | undefined): Promise<string> {
+    const asked = now()
+    const response = await fetch(options.tokenUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: options.clientId,
+        client_secret: options.clientSecret,
+      }),
+      signal: signal ?? AbortSignal.timeout(options.timeoutMs ?? 1_000),
+    })
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new ServiceTokenError(`Identity refused a service token: ${response.status}`)
+    }
 
-      const response = await fetch(options.tokenUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
-        body: new URLSearchParams({
-          grant_type: 'client_credentials',
-          client_id: options.clientId,
-          client_secret: options.clientSecret,
-        }),
-        signal: signal ?? AbortSignal.timeout(options.timeoutMs ?? 1_000),
-      })
-      if (!response.ok) {
-        await response.body?.cancel()
-        throw new ServiceTokenError(`Identity refused a service token: ${response.status}`)
-      }
+    const body = (await response.json()) as { access_token?: unknown; expires_in?: unknown }
+    if (typeof body.access_token !== 'string') {
+      throw new ServiceTokenError('Identity answered without access_token')
+    }
 
-      const body = (await response.json()) as { access_token?: unknown; expires_in?: unknown }
-      if (typeof body.access_token !== 'string' || typeof body.expires_in !== 'number') {
-        throw new ServiceTokenError('Identity answered without access_token and expires_in')
-      }
-
+    // RFC 6749 §5.1 only recommends expires_in. Without it the token is used once and not kept:
+    // assuming a lifetime could serve one Identity has already expired.
+    if (typeof body.expires_in === 'number') {
       const lifetime = Math.max(0, body.expires_in - REFRESH_MARGIN_SECONDS)
       cached = { value: body.access_token, refreshAt: asked + lifetime * 1_000 }
-      return body.access_token
+    }
+    return body.access_token
+  }
+
+  return {
+    token(signal) {
+      if (cached !== undefined && now() < cached.refreshAt) return Promise.resolve(cached.value)
+      inFlight ??= ask(signal).finally(() => {
+        inFlight = undefined
+      })
+      return inFlight
     },
 
     invalidate() {
