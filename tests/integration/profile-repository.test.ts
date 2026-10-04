@@ -232,12 +232,18 @@ describe('row to domain is a boundary', () => {
   })
 
   it('refuses half a pace range at the table — both ends or neither is shape', async () => {
-    await expect(
-      db.execute(sql`
+    const error = await db
+      .execute(sql`
         INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, pace_fastest, preferred_run_times)
         VALUES ('half', 'Ann', 13.73, 100.54, 330, '[]'::jsonb)
-      `),
-    ).rejects.toThrow()
+      `)
+      .catch((e: unknown) => e)
+
+    // The driver error may be wrapped; find the layer carrying the SQLSTATE. Any other failure —
+    // a misspelt column, say — must not pass for the constraint doing its job.
+    let current: unknown = error
+    while (current instanceof Error && !('code' in current)) current = current.cause
+    expect(current).toMatchObject({ code: '23514', constraint: 'pace_range_has_both_ends' })
   })
 
   it('rejects a stored pace range whose fastest end is slower', async () => {
