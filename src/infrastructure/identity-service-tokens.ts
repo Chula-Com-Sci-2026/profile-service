@@ -6,7 +6,11 @@
  * no team document names one yet. Internal to infrastructure — only the event publisher asks.
  */
 export type ServiceTokens = {
-  token: () => Promise<string>
+  /**
+   * A caller with its own deadline passes its signal, so asking for a token spends the same
+   * budget as the call the token is for, rather than a second one of its own.
+   */
+  token: (signal?: AbortSignal) => Promise<string>
   /** Forget the cached token — a subscriber answered 401. */
   invalidate: () => void
 }
@@ -37,7 +41,7 @@ export function identityServiceTokens(options: ServiceTokenOptions): ServiceToke
   let cached: { value: string; refreshAt: number } | undefined
 
   return {
-    async token() {
+    async token(signal) {
       const asked = now()
       if (cached !== undefined && asked < cached.refreshAt) return cached.value
 
@@ -49,7 +53,7 @@ export function identityServiceTokens(options: ServiceTokenOptions): ServiceToke
           client_id: options.clientId,
           client_secret: options.clientSecret,
         }),
-        signal: AbortSignal.timeout(options.timeoutMs ?? 1_000),
+        signal: signal ?? AbortSignal.timeout(options.timeoutMs ?? 1_000),
       })
       if (!response.ok) {
         await response.body?.cancel()

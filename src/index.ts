@@ -10,7 +10,7 @@ import { updateProfile } from './application/update-profile.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
-import { httpProfileEvents } from './infrastructure/http-profile-events.ts'
+import { httpProfileEvents, logUndelivered } from './infrastructure/http-profile-events.ts'
 import { identityServiceTokens } from './infrastructure/identity-service-tokens.ts'
 import { createAvatarStorage } from './infrastructure/minio-avatar-storage.ts'
 import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
@@ -59,13 +59,7 @@ const events =
       })
 if (config.events === undefined) logger.info('no EVENT_SUBSCRIBERS configured: profile events are not published')
 
-const publishing: Publishing = {
-  events,
-  onUndelivered: (userId, error) => {
-    // The error names the event, the subscriber and the request id — never the profile.
-    logger.error({ err: error, userId }, 'a profile event was not delivered')
-  },
-}
+const publishing: Publishing = { events, onUndelivered: logUndelivered(logger, currentRequestId) }
 
 /** Flipped before anything stops accepting, so /ready answers 503 first. */
 let draining = false

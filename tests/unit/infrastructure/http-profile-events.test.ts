@@ -2,7 +2,8 @@ import { stdSerializers } from 'pino'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Area } from '../../../src/domain/area.ts'
 import { Profile } from '../../../src/domain/profile.ts'
-import { EventNotDeliveredError, httpProfileEvents } from '../../../src/infrastructure/http-profile-events.ts'
+import { EventNotDeliveredError, httpProfileEvents, logUndelivered } from '../../../src/infrastructure/http-profile-events.ts'
+import { identityServiceTokens, ServiceTokenError } from '../../../src/infrastructure/identity-service-tokens.ts'
 import type { ServiceTokens } from '../../../src/infrastructure/identity-service-tokens.ts'
 import { localServer, type Reply } from './local-server.ts'
 
@@ -152,5 +153,72 @@ describe('httpProfileEvents — retrying (ADR-0019: a short timeout and a few re
 
     await expect(publisher.updated(nok)).rejects.toMatchObject({ attempts: 3 })
     expect(server.received).toHaveLength(0)
+  })
+})
+
+describe('httpProfileEvents — saying which step failed', () => {
+  it('blames the token when Identity refuses, not the subscriber', async () => {
+    const server = await discovery(() => ({ status: 202 }))
+    const refusing = tokens(async () => {
+      throw new ServiceTokenError('Identity refused a service token: 401')
+    })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: refusing.fake, currentRequestId: () => 'r', ...fast })
+
+    const error = await publisher.updated(nok).catch((e: unknown) => e)
+
+    expect(error).toMatchObject({ stage: 'token' })
+    expect((error as Error).message).toContain('Identity refused a service token: 401')
+  })
+
+  it('blames delivery when the subscriber keeps refusing', async () => {
+    const server = await discovery(() => ({ status: 503 }))
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+
+    const error = await publisher.updated(nok).catch((e: unknown) => e)
+
+    expect(error).toMatchObject({ stage: 'delivery', status: 503 })
+    expect((error as Error).message).toContain('503')
+  })
+})
+
+describe('httpProfileEvents — one deadline per attempt', () => {
+  it('counts a slow token against the same timeout as the POST', async () => {
+    const identity = await localServer(() => 'hang')
+    closers.push(identity.close)
+    const server = await discovery(() => ({ status: 202 }))
+    const publisher = httpProfileEvents({
+      subscribers: [server.url],
+      tokens: identityServiceTokens({ tokenUrl: identity.url, clientId: 'profile-service', clientSecret: 'secret' }),
+      currentRequestId: () => 'r',
+      ...fast,
+    })
+
+    const started = Date.now()
+    await expect(publisher.updated(nok)).rejects.toMatchObject({ attempts: 3, stage: 'token' })
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+})
+
+describe('logUndelivered — the log line for a lost event', () => {
+  it('carries the request id at the top level, so it joins the request that caused it (NFR-7.4)', async () => {
+    const server = await discovery(() => ({ status: 503 }))
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'abc123', ...fast })
+    const error = await publisher.updated(nok).catch((e: unknown) => e)
+    const lines: { fields: Record<string, unknown>; message: string }[] = []
+
+    logUndelivered({ error: (fields, message) => lines.push({ fields: fields as Record<string, unknown>, message }) }, () => undefined)(
+      '7f3a9c2e15',
+      error,
+    )
+
+    expect(lines).toEqual([
+      { fields: { err: error, userId: '7f3a9c2e15', requestId: 'abc123' }, message: 'a profile event was not delivered' },
+    ])
+  })
+
+  it('falls back to the current request id for any other failure', () => {
+    const lines: Record<string, unknown>[] = []
+    logUndelivered({ error: (fields) => lines.push(fields as Record<string, unknown>) }, () => 'xyz789')('7f3a9c2e15', new Error('boom'))
+    expect(lines[0]?.['requestId']).toBe('xyz789')
   })
 })
