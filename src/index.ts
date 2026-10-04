@@ -5,11 +5,13 @@ import { createAvatarUpload } from './application/create-avatar-upload.ts'
 import { createProfile } from './application/create-profile.ts'
 import { deleteProfile } from './application/delete-profile.ts'
 import { getProfile } from './application/get-profile.ts'
+import type { Publishing } from './application/publishing.ts'
 import { updateProfile } from './application/update-profile.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
 import { createAvatarStorage } from './infrastructure/minio-avatar-storage.ts'
+import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
 import { createApp } from './interface/http/app.ts'
 import { remoteIdentityKeys } from './interface/http/authentication.ts'
 
@@ -35,21 +37,30 @@ const database = createDatabase(config.databaseUrl, (error) => {
 const repository = new DrizzleProfileRepository(database.db)
 const avatars = createAvatarStorage(config.objectStorage)
 
+
+/** Silent until profile events are configured (the next commits wire the HTTP publisher). */
+const publishing: Publishing = {
+  events: silentProfileEvents,
+  onUndelivered: (userId, error) => {
+    logger.error({ err: error, userId }, 'a profile event was not delivered')
+  },
+}
+
 /** Flipped before anything stops accepting, so /ready answers 503 first. */
 let draining = false
 
 const app = createApp({
   useCases: {
-    createProfile: createProfile(repository),
+    createProfile: createProfile(repository, publishing),
     getProfile: getProfile(repository),
     updateProfile: updateProfile(repository, avatars, (userId, error) => {
       logger.error({ err: error, userId }, 'an avatar object was orphaned by a profile change')
-    }),
+    }, publishing),
     deleteProfile: deleteProfile(repository, avatars, (userId, error) => {
       // The profile is gone and its images are not. Storage and the database cannot commit
       // together, so this is logged and tolerated rather than retried into a hung delete.
       logger.error({ err: error, userId }, 'avatar objects orphaned after deleting a profile')
-    }),
+    }, publishing),
     createAvatarUpload: createAvatarUpload(repository, avatars),
   },
   logger,

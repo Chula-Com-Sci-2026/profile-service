@@ -1,6 +1,7 @@
 import { ProfileNotFoundError } from '../domain/errors.ts'
 import type { ProfileRepository } from '../domain/profile-repository.ts'
 import type { AvatarStorage } from './ports/avatar-storage.ts'
+import type { Publishing } from './publishing.ts'
 
 export type DeleteProfile = (userId: string) => Promise<void>
 
@@ -20,9 +21,11 @@ export function deleteProfile(
   repository: ProfileRepository,
   storage: AvatarStorage,
   onOrphan: (userId: string, error: unknown) => void,
+  publishing: Publishing,
 ): DeleteProfile {
   return async (userId) => {
     if (!(await repository.delete(userId))) throw new ProfileNotFoundError(userId)
+    await publishing.events.deleted(userId).catch((error: unknown) => publishing.onUndelivered(userId, error))
     await storage.removeAll(userId).catch((error: unknown) => onOrphan(userId, error))
   }
 }

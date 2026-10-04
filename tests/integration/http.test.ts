@@ -16,6 +16,7 @@ import type { Env } from '../../src/interface/http/context.ts'
 import { contractDocument } from '../../src/interface/http/docs.ts'
 import { errorHandler } from '../../src/interface/http/error-handler.ts'
 import { documentedResponses, exercised, expectContract } from './contract.ts'
+import { RecordingProfileEvents } from '../unit/application/profile-events-double.ts'
 import { anIdentity, type Identity } from './identity.ts'
 
 const alwaysReady = { isDraining: () => false, canServe: () => Promise.resolve(true) }
@@ -39,19 +40,34 @@ let pool: pg.Pool
 let db: NodePgDatabase
 let app: Hono<Env>
 let identity: Identity
+/** What the app published during the current test; reset before each. */
+let events: RecordingProfileEvents
+const undelivered: string[] = []
+
+/** Reads `events` at call time, so each test sees a fresh recorder. */
+const publishing = () => ({
+  events: {
+    updated: (profile: Parameters<RecordingProfileEvents['updated']>[0]) => events.updated(profile),
+    deleted: (userId: string) => events.deleted(userId),
+  },
+  onUndelivered: (userId: string) => {
+    undelivered.push(userId)
+  },
+})
 
 beforeAll(async () => {
   pool = new pg.Pool({ connectionString: inject('databaseUrl') })
   db = drizzle(pool)
   identity = await anIdentity()
   const repository = new DrizzleProfileRepository(db)
+  events = new RecordingProfileEvents()
 
   app = createApp({
     useCases: {
-      createProfile: createProfile(repository),
+      createProfile: createProfile(repository, publishing()),
       getProfile: getProfile(repository),
-      updateProfile: updateProfile(repository, storage, () => {}),
-      deleteProfile: deleteProfile(repository, storage, () => {}),
+      updateProfile: updateProfile(repository, storage, () => {}, publishing()),
+      deleteProfile: deleteProfile(repository, storage, () => {}, publishing()),
       createAvatarUpload: createAvatarUpload(repository, storage),
     },
     logger: pino({ level: 'silent' }),
@@ -76,6 +92,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.execute(sql`TRUNCATE profiles`)
+  events = new RecordingProfileEvents()
+  undelivered.length = 0
 })
 
 const minimal = { displayName: 'Nok', birthYear: 1994, area: { latitude: 13.7314, longitude: 100.5414 } }
@@ -681,5 +699,48 @@ describe('the documentation', () => {
 describe('the contract itself', () => {
   it('has every documented response exercised by at least one test', () => {
     expect([...exercised].sort()).toEqual([...documentedResponses].sort())
+  })
+})
+
+describe('profile events — the use cases tell subscribers', () => {
+  const patch = (userId: string, body: unknown): Promise<Response> =>
+    as(userId, `/v1/profiles/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/merge-patch+json' },
+    })
+
+  it('PUT publishes ProfileUpdated with the saved profile', async () => {
+    await expectContract('createProfile', 201, await put(NOK, minimal))
+    expect(events.published.map((e) => e.type)).toEqual(['updated'])
+  })
+
+  it('PATCH publishes the profile as saved', async () => {
+    await givenAProfile()
+    await expectContract('updateProfile', 200, await patch(NOK, { displayName: 'Nok R.' }))
+    const last = events.published.at(-1)
+    expect(last?.type === 'updated' && last.profile.displayName).toBe('Nok R.')
+  })
+
+  it('DELETE publishes ProfileDeleted', async () => {
+    await givenAProfile()
+    await expectContract('deleteProfile', 204, await as(NOK, `/v1/profiles/${NOK}`, { method: 'DELETE' }))
+    expect(events.published.at(-1)).toEqual({ type: 'deleted', userId: NOK })
+  })
+
+  it('a refused write publishes nothing', async () => {
+    await givenAProfile()
+    events.published.length = 0
+    await expectContract('createProfile', 409, await put(NOK, minimal))
+    await expectContract('updateProfile', 422, await patch(NOK, { pace: 10 }))
+    expect(events.published).toEqual([])
+  })
+
+  it('still answers 201, 200 and 204 when Buddy Discovery is down (ADR-0019)', async () => {
+    events.failWith = new Error('Buddy Discovery is down')
+    await expectContract('createProfile', 201, await put(NOK, minimal))
+    await expectContract('updateProfile', 200, await patch(NOK, { displayName: 'Nok R.' }))
+    await expectContract('deleteProfile', 204, await as(NOK, `/v1/profiles/${NOK}`, { method: 'DELETE' }))
+    expect(undelivered).toEqual([NOK, NOK, NOK])
   })
 })

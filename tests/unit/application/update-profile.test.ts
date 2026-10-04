@@ -6,13 +6,14 @@ import type { ProfileRepository } from '../../../src/domain/profile-repository.t
 import { FakeAvatarStorage } from './avatar-storage-double.ts'
 import { InMemoryProfileRepository } from './in-memory-profile-repository.ts'
 import { aProfile } from './profiles.ts'
+import { RecordingProfileEvents, publishing } from './profile-events-double.ts'
 
 describe('updateProfile', () => {
   it('applies the changes and stores the result', async () => {
     const repository = new InMemoryProfileRepository()
     repository.given(aProfile())
 
-    const updated = await updateProfile(repository, new FakeAvatarStorage(), () => {})('7f3a9c2e15', { displayName: 'Nok R.' })
+    const updated = await updateProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('7f3a9c2e15', { displayName: 'Nok R.' })
 
     expect(updated.displayName).toBe('Nok R.')
     expect((await repository.findById('7f3a9c2e15'))?.displayName).toBe('Nok R.')
@@ -22,7 +23,7 @@ describe('updateProfile', () => {
     const repository = new InMemoryProfileRepository()
     repository.given(aProfile())
 
-    const updated = await updateProfile(repository, new FakeAvatarStorage(), () => {})('7f3a9c2e15', { bio: null })
+    const updated = await updateProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('7f3a9c2e15', { bio: null })
 
     expect(updated.bio).toBeUndefined()
     expect(updated.gender).toBe('female')
@@ -33,13 +34,13 @@ describe('updateProfile', () => {
     const repository = new InMemoryProfileRepository()
     repository.given(aProfile())
 
-    expect((await updateProfile(repository, new FakeAvatarStorage(), () => {})('7f3a9c2e15', { displayName: 'Beam' })).userId).toBe('7f3a9c2e15')
+    expect((await updateProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('7f3a9c2e15', { displayName: 'Beam' })).userId).toBe('7f3a9c2e15')
   })
 
   it('raises the domain error when there is no such profile', async () => {
     const repository = new InMemoryProfileRepository()
 
-    await expect(updateProfile(repository, new FakeAvatarStorage(), () => {})('nobody', { displayName: 'Beam' })).rejects.toThrow(
+    await expect(updateProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('nobody', { displayName: 'Beam' })).rejects.toThrow(
       ProfileNotFoundError,
     )
   })
@@ -53,7 +54,7 @@ describe('updateProfile', () => {
       delete: async () => true,
     }
 
-    await expect(updateProfile(repository, new FakeAvatarStorage(), () => {})('7f3a9c2e15', { displayName: 'Beam' })).rejects.toThrow(
+    await expect(updateProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('7f3a9c2e15', { displayName: 'Beam' })).rejects.toThrow(
       ProfileNotFoundError,
     )
   })
@@ -63,7 +64,7 @@ describe('updateProfile', () => {
     repository.given(aProfile())
 
     await expect(
-      updateProfile(repository, new FakeAvatarStorage(), () => {})('7f3a9c2e15', { displayName: 'x'.repeat(51) }),
+      updateProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('7f3a9c2e15', { displayName: 'x'.repeat(51) }),
     ).rejects.toThrow(InvalidProfileFieldError)
     expect((await repository.findById('7f3a9c2e15'))?.displayName).toBe('Nok')
   })
@@ -77,7 +78,7 @@ describe('updateProfile — the avatar it displaces', () => {
     const storage = new FakeAvatarStorage()
     repository.given(withAvatar())
 
-    await updateProfile(repository, storage, () => {})('7f3a9c2e15', {
+    await updateProfile(repository, storage, () => {}, publishing())('7f3a9c2e15', {
       avatarRef: 'avatars/7f3a9c2e15/new',
     })
 
@@ -89,7 +90,7 @@ describe('updateProfile — the avatar it displaces', () => {
     const storage = new FakeAvatarStorage()
     repository.given(withAvatar())
 
-    await updateProfile(repository, storage, () => {})('7f3a9c2e15', { avatarRef: null })
+    await updateProfile(repository, storage, () => {}, publishing())('7f3a9c2e15', { avatarRef: null })
 
     expect(storage.removedKeys).toEqual(['avatars/7f3a9c2e15/old'])
   })
@@ -99,7 +100,7 @@ describe('updateProfile — the avatar it displaces', () => {
     const storage = new FakeAvatarStorage()
     repository.given(withAvatar())
 
-    await updateProfile(repository, storage, () => {})('7f3a9c2e15', { displayName: 'Nok R.' })
+    await updateProfile(repository, storage, () => {}, publishing())('7f3a9c2e15', { displayName: 'Nok R.' })
 
     expect(storage.removedKeys).toEqual([])
   })
@@ -111,7 +112,7 @@ describe('updateProfile — the avatar it displaces', () => {
     repository.given(withAvatar())
     const orphans: string[] = []
 
-    const updated = await updateProfile(repository, storage, (userId) => orphans.push(userId))(
+    const updated = await updateProfile(repository, storage, (userId) => orphans.push(userId), publishing())(
       '7f3a9c2e15',
       { avatarRef: 'avatars/7f3a9c2e15/new' },
     )
@@ -131,11 +132,56 @@ describe('updateProfile — an avatar that is not yours', () => {
     repository.given(aProfile({ avatarRef: 'avatars/somebody-else/their-image' }))
     const orphans: string[] = []
 
-    await updateProfile(repository, storage, (userId) => orphans.push(userId))('7f3a9c2e15', {
+    await updateProfile(repository, storage, (userId) => orphans.push(userId), publishing())('7f3a9c2e15', {
       avatarRef: null,
     })
 
     expect(storage.removedKeys).toEqual([])
     expect(orphans).toEqual(['7f3a9c2e15'])
+  })
+})
+
+describe('updateProfile — telling subscribers', () => {
+  it('publishes the profile as saved, not the patch', async () => {
+    const repository = new InMemoryProfileRepository()
+    repository.given(aProfile())
+    const events = new RecordingProfileEvents()
+
+    const updated = await updateProfile(repository, new FakeAvatarStorage(), () => {}, publishing(events))(
+      '7f3a9c2e15',
+      { displayName: 'Nok R.' },
+    )
+
+    expect(events.published).toEqual([{ type: 'updated', profile: updated }])
+    expect(updated.bio).toBe('Chasing a sub-2 half.')
+  })
+
+  it('publishes nothing when there is no such profile', async () => {
+    const events = new RecordingProfileEvents()
+
+    await expect(
+      updateProfile(new InMemoryProfileRepository(), new FakeAvatarStorage(), () => {}, publishing(events))(
+        'nobody',
+        { displayName: 'Beam' },
+      ),
+    ).rejects.toThrow(ProfileNotFoundError)
+    expect(events.published).toEqual([])
+  })
+
+  it('keeps the change when delivery fails, and reports it', async () => {
+    const repository = new InMemoryProfileRepository()
+    repository.given(aProfile())
+    const events = new RecordingProfileEvents()
+    events.failWith = new Error('Buddy Discovery is down')
+    const undelivered: string[] = []
+
+    const updated = await updateProfile(repository, new FakeAvatarStorage(), () => {}, {
+      events,
+      onUndelivered: (userId) => undelivered.push(userId),
+    })('7f3a9c2e15', { displayName: 'Nok R.' })
+
+    expect(updated.displayName).toBe('Nok R.')
+    expect((await repository.findById('7f3a9c2e15'))?.displayName).toBe('Nok R.')
+    expect(undelivered).toEqual(['7f3a9c2e15'])
   })
 })

@@ -2,6 +2,7 @@ import { ProfileNotFoundError } from '../domain/errors.ts'
 import type { Profile, ProfileChanges } from '../domain/profile.ts'
 import type { ProfileRepository } from '../domain/profile-repository.ts'
 import type { AvatarStorage } from './ports/avatar-storage.ts'
+import type { Publishing } from './publishing.ts'
 
 export type UpdateProfile = (userId: string, changes: ProfileChanges) => Promise<Profile>
 
@@ -17,6 +18,7 @@ export function updateProfile(
   repository: ProfileRepository,
   storage: AvatarStorage,
   onOrphan: (userId: string, error: unknown) => void,
+  publishing: Publishing,
 ): UpdateProfile {
   return async (userId, changes) => {
     const current = await repository.findById(userId)
@@ -28,6 +30,9 @@ export function updateProfile(
     // the later write reverts the earlier one. See "Concurrent updates to one profile" under
     // Deferred on purpose in build_plan.md.
     if (!(await repository.update(next))) throw new ProfileNotFoundError(userId)
+
+    // Subscribers hear of the change once it is saved; a failed delivery is reported, not thrown.
+    await publishing.events.updated(next).catch((error: unknown) => publishing.onUndelivered(userId, error))
 
     // An avatar the profile no longer points at — replaced or cleared — is unreachable, since
     // every upload mints a fresh key. Dropping it here is what stops a change leaving litter.

@@ -4,6 +4,7 @@ import { ProfileNotFoundError } from '../../../src/domain/errors.ts'
 import { FakeAvatarStorage } from './avatar-storage-double.ts'
 import { InMemoryProfileRepository } from './in-memory-profile-repository.ts'
 import { aProfile } from './profiles.ts'
+import { RecordingProfileEvents, publishing } from './profile-events-double.ts'
 
 describe('deleteProfile', () => {
   it('removes the runner\u2019s avatars too, without reading the profile to find them', async () => {
@@ -11,7 +12,7 @@ describe('deleteProfile', () => {
     const storage = new FakeAvatarStorage()
     repository.given(aProfile())
 
-    await deleteProfile(repository, storage, () => {})('7f3a9c2e15')
+    await deleteProfile(repository, storage, () => {}, publishing())('7f3a9c2e15')
 
     // Keys are prefixed by userId, so storage needs no help identifying what to drop.
     expect(storage.removed).toEqual(['7f3a9c2e15'])
@@ -24,7 +25,7 @@ describe('deleteProfile', () => {
     repository.given(aProfile())
     const orphans: string[] = []
 
-    await deleteProfile(repository, storage, (userId) => orphans.push(userId))('7f3a9c2e15')
+    await deleteProfile(repository, storage, (userId) => orphans.push(userId), publishing())('7f3a9c2e15')
 
     expect(await repository.findById('7f3a9c2e15')).toBeNull()
     expect(orphans).toEqual(['7f3a9c2e15'])
@@ -33,7 +34,7 @@ describe('deleteProfile', () => {
   it('leaves storage alone when there was no profile to delete', async () => {
     const storage = new FakeAvatarStorage()
     await expect(
-      deleteProfile(new InMemoryProfileRepository(), storage, () => {})('nobody'),
+      deleteProfile(new InMemoryProfileRepository(), storage, () => {}, publishing())('nobody'),
     ).rejects.toThrow(ProfileNotFoundError)
     expect(storage.removed).toEqual([])
   })
@@ -42,7 +43,7 @@ describe('deleteProfile', () => {
     const repository = new InMemoryProfileRepository()
     repository.given(aProfile())
 
-    await deleteProfile(repository, new FakeAvatarStorage(), () => {})('7f3a9c2e15')
+    await deleteProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('7f3a9c2e15')
 
     expect(await repository.findById('7f3a9c2e15')).toBeNull()
   })
@@ -50,7 +51,7 @@ describe('deleteProfile', () => {
   it('raises the domain error when there is nothing to remove', async () => {
     const repository = new InMemoryProfileRepository()
 
-    await expect(deleteProfile(repository, new FakeAvatarStorage(), () => {})('nobody')).rejects.toThrow(ProfileNotFoundError)
+    await expect(deleteProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('nobody')).rejects.toThrow(ProfileNotFoundError)
   })
 
   it('asks once, rather than reading and then deleting', async () => {
@@ -67,7 +68,44 @@ describe('deleteProfile', () => {
       delete: repository.delete.bind(repository),
     }
 
-    await deleteProfile(watched, new FakeAvatarStorage(), () => {})('7f3a9c2e15')
+    await deleteProfile(watched, new FakeAvatarStorage(), () => {}, publishing())('7f3a9c2e15')
     expect(lookups).toBe(0)
+  })
+})
+
+describe('deleteProfile — telling subscribers', () => {
+  it('publishes ProfileDeleted once the profile is gone', async () => {
+    const repository = new InMemoryProfileRepository()
+    repository.given(aProfile())
+    const events = new RecordingProfileEvents()
+
+    await deleteProfile(repository, new FakeAvatarStorage(), () => {}, publishing(events))('7f3a9c2e15')
+
+    expect(events.published).toEqual([{ type: 'deleted', userId: '7f3a9c2e15' }])
+  })
+
+  it('publishes nothing when there was nothing to delete', async () => {
+    const events = new RecordingProfileEvents()
+
+    await expect(
+      deleteProfile(new InMemoryProfileRepository(), new FakeAvatarStorage(), () => {}, publishing(events))('nobody'),
+    ).rejects.toThrow(ProfileNotFoundError)
+    expect(events.published).toEqual([])
+  })
+
+  it('still deletes when delivery fails, and reports it', async () => {
+    const repository = new InMemoryProfileRepository()
+    repository.given(aProfile())
+    const events = new RecordingProfileEvents()
+    events.failWith = new Error('Buddy Discovery is down')
+    const undelivered: string[] = []
+
+    await deleteProfile(repository, new FakeAvatarStorage(), () => {}, {
+      events,
+      onUndelivered: (userId) => undelivered.push(userId),
+    })('7f3a9c2e15')
+
+    expect(await repository.findById('7f3a9c2e15')).toBeNull()
+    expect(undelivered).toEqual(['7f3a9c2e15'])
   })
 })

@@ -8,6 +8,7 @@ import { loadDatabaseUrl, loadObjectStorage } from '../src/infrastructure/config
 import { createDatabase } from '../src/infrastructure/database.ts'
 import { DrizzleProfileRepository } from '../src/infrastructure/drizzle-profile-repository.ts'
 import { createAvatarStorage } from '../src/infrastructure/minio-avatar-storage.ts'
+import { silentProfileEvents } from '../src/infrastructure/silent-profile-events.ts'
 import { toFields } from '../src/interface/http/profile-input.ts'
 import { profileWrite } from '../src/interface/http/validators.ts'
 
@@ -39,6 +40,10 @@ const database = createDatabase(loadDatabaseUrl(), (error) => {
 const avatars: AvatarStorage = createAvatarStorage(loadObjectStorage())
 const repository = new DrizzleProfileRepository(database.db)
 
+
+/** Silent for now; the events task makes the seed publish what it loads. */
+const quiet = { events: silentProfileEvents, onUndelivered: () => {} }
+
 /** Upload the bytes to the presigned URL, then record the key it minted. */
 async function attachAvatar(userId: string): Promise<string | undefined> {
   const file = here(`./avatars/${userId}.png`)
@@ -52,7 +57,7 @@ async function attachAvatar(userId: string): Promise<string | undefined> {
 
   await updateProfile(repository, avatars, (id, error) => {
     console.error(`an avatar object was orphaned for ${id}:`, error)
-  })(userId, { avatarRef })
+  }, quiet)(userId, { avatarRef })
   return avatarRef
 }
 
@@ -63,7 +68,7 @@ try {
   // poor trade for a demo seeder.
   await database.db.transaction(async (tx) => {
     await tx.execute(sql`TRUNCATE profiles`)
-    const insert = createProfile(new DrizzleProfileRepository(tx))
+    const insert = createProfile(new DrizzleProfileRepository(tx), quiet)
 
     for (const entry of entries) {
       if (typeof entry !== 'object' || entry === null) {
