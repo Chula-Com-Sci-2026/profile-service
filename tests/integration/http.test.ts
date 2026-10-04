@@ -15,6 +15,7 @@ import { createApp } from '../../src/interface/http/app.ts'
 import type { Env } from '../../src/interface/http/context.ts'
 import { contractDocument } from '../../src/interface/http/docs.ts'
 import { errorHandler } from '../../src/interface/http/error-handler.ts'
+import { currentRequestId } from '../../src/interface/http/request-context.ts'
 import { documentedResponses, exercised, expectContract } from './contract.ts'
 import { RecordingProfileEvents } from '../unit/application/profile-events-double.ts'
 import { anIdentity, type Identity } from './identity.ts'
@@ -43,11 +44,15 @@ let identity: Identity
 /** What the app published during the current test; reset before each. */
 let events: RecordingProfileEvents
 const undelivered: string[] = []
+let requestIdWhenPublished: string | undefined
 
 /** Reads `events` at call time, so each test sees a fresh recorder. */
 const publishing = () => ({
   events: {
-    updated: (profile: Parameters<RecordingProfileEvents['updated']>[0]) => events.updated(profile),
+    updated: (profile: Parameters<RecordingProfileEvents['updated']>[0]) => {
+      requestIdWhenPublished = currentRequestId()
+      return events.updated(profile)
+    },
     deleted: (userId: string) => events.deleted(userId),
   },
   onUndelivered: (userId: string) => {
@@ -94,6 +99,7 @@ beforeEach(async () => {
   await db.execute(sql`TRUNCATE profiles`)
   events = new RecordingProfileEvents()
   undelivered.length = 0
+  requestIdWhenPublished = undefined
 })
 
 const minimal = { displayName: 'Nok', birthYear: 1994, area: { latitude: 13.7314, longitude: 100.5414 } }
@@ -412,6 +418,21 @@ describe('GET /health', () => {
 })
 
 describe('the request context', () => {
+  it('is current while the request is served, so the event publisher can pass it on (NFR-7.4)', async () => {
+    await put(NOK, minimal)
+    const response = await as(NOK, `/v1/profiles/${NOK}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName: 'Nok R.' }),
+      headers: { 'content-type': 'application/merge-patch+json', 'x-request-id': 'abc123' },
+    })
+    expect(response.status).toBe(200)
+    expect(requestIdWhenPublished).toBe('abc123')
+  })
+
+  it('is gone once the request is over', () => {
+    expect(currentRequestId()).toBeUndefined()
+  })
+
   it('echoes a correlation id back', async () => {
     const response = await app.request('/health')
     expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)

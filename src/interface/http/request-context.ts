@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { createMiddleware } from 'hono/factory'
 import type { Logger } from 'pino'
@@ -10,6 +11,18 @@ const TRACE_ID = /^[0-9a-f]{32}$/
 function traceId(traceparent: string | undefined): string | undefined {
   const candidate = traceparent?.split('-')[1]
   return candidate !== undefined && TRACE_ID.test(candidate) ? candidate : undefined
+}
+
+const requestIds = new AsyncLocalStorage<string>()
+
+/**
+ * The correlation id of the request being served, for code that never sees the request — the
+ * profile-event publisher passes it on to the next service (NFR-7.4). Undefined outside one.
+ *
+ * `src/index.ts` hands this function to the publisher, so no layer imports across the rules.
+ */
+export function currentRequestId(): string | undefined {
+  return requestIds.getStore()
 }
 
 /**
@@ -27,6 +40,6 @@ export function requestContext(base: Logger) {
     c.set('log', base.child({ requestId }))
     c.header(REQUEST_ID_HEADER, requestId)
 
-    await next()
+    await requestIds.run(requestId, () => next())
   })
 }
