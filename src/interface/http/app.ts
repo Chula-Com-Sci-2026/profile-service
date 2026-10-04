@@ -10,7 +10,7 @@ import type { Env } from './context.ts'
 import { contractDocument, documentationAsset, documentationPage } from './docs.ts'
 import { errorHandler, notFoundHandler } from './error-handler.ts'
 import { MalformedBodyError } from './errors.ts'
-import { ownsTheProfile } from './ownership.ts'
+import { isOwner, ownsTheProfile } from './ownership.ts'
 import { toChanges, toFields } from './profile-input.ts'
 import { toView } from './profile-view.ts'
 import { requestContext } from './request-context.ts'
@@ -97,12 +97,10 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
     return c.json(toView(profile, 'owner'), 201)
   })
 
-  // Reading is open to any runner; what they see is not. The comparison is ownsTheProfile's,
-  // but here it chooses a view instead of refusing.
+  // Reading is open to any runner; what they see is not.
   app.get(PROFILE, async (c) => {
-    const userId = c.req.param('userId')
-    const audience = c.get('caller').userId === userId ? 'owner' : 'others'
-    return c.json(toView(await useCases.getProfile(userId), audience))
+    const profile = await useCases.getProfile(c.req.param('userId'))
+    return c.json(toView(profile, isOwner(c) ? 'owner' : 'others'))
   })
 
   app.patch(PROFILE, ownsTheProfile(), async (c) => {
