@@ -48,8 +48,8 @@ driven, run `npm run test:int`: it generates a keypair and signs its own.
 Everything under `/v1` needs a bearer token from Identity: read anyone's profile, change only
 your own. Nothing outside `/v1` needs a token.
 
-Profiles cannot be listed or searched — deliberately. [docs/domain.md](docs/domain.md) §1 says
-what that is waiting on.
+Profiles cannot be listed or searched — deliberately: Buddy Discovery keeps its own copy of what
+this service publishes, as [docs/domain.md](docs/domain.md) §1 explains.
 
 Statuses, request and response shapes, and the avatar handshake are in the contract: open
 `/docs`, or read [docs/openapi.yaml](docs/openapi.yaml).
