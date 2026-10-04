@@ -4,7 +4,7 @@
 
 ## 1. Bounded context
 
-**Profile Service** holds what a runner says about themselves: what they are like, and how, when and where they usually run. It is the source of truth for that — no other service stores it. Profile images are the exception: the image itself lives in object storage owned by this service, and only its key is stored here.
+**Profile Service** holds what a runner says about themselves: what they are like, and how, when and where they usually run. It is the source of truth for that: other services may keep copies of what we publish, never the original. Profile images are the exception: the image itself lives in object storage owned by this service, and only its key is stored here.
 
 ### Context map
 
@@ -19,17 +19,17 @@
 │  Profile Service  │
 │  (this service)   │
 └───────────────────┘
-          ┊
-          ┊ deferred
+          │
+          │ customer/supplier
           ▼
-┌───────────────────┐
-│ Discovery Service │
-└───────────────────┘
+┌─────────────────────────┐
+│ Buddy Discovery Service │
+└─────────────────────────┘
 ```
 
 Identity is upstream. We are **conformist**: we take its `userId` as given. We never create one, and we treat it as a meaningless string. Identity may delete a runner; nothing tells us, so a profile can outlive the runner it describes. **Not handled yet.**
 
-Discovery is downstream — it will need profiles to match runners — but nothing connects us yet. That link is **deferred, not declined**. How Discovery gets profile data is undecided: a copy it builds from events we publish, or queries it makes to us. That is a decision for both services together, and it is what decides whether this service ever exposes a bulk read.
+Buddy Discovery is downstream, and we are its **supplier**: it builds its own copy of how each runner appears to other runners from two events we publish. **ProfileUpdated** goes out after a profile is created or changed and carries the profile as other runners see it, the area as its cell. **ProfileDeleted** goes out after a profile is removed. We shape them around what Buddy Discovery matches on, and because it keeps its own copy, this service needs no bulk read.
 
 ## 2. Ubiquitous language
 
