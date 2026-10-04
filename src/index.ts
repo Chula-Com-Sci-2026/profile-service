@@ -12,6 +12,7 @@ import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
 import { httpProfileEvents, logUndelivered } from './infrastructure/http-profile-events.ts'
 import { identityServiceTokens } from './infrastructure/identity-service-tokens.ts'
+import { logOrphan } from './infrastructure/log-orphan.ts'
 import { createAvatarStorage } from './infrastructure/minio-avatar-storage.ts'
 import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
 import { createApp } from './interface/http/app.ts'
@@ -68,14 +69,19 @@ const app = createApp({
   useCases: {
     createProfile: createProfile(repository, publishing),
     getProfile: getProfile(repository),
-    updateProfile: updateProfile(repository, avatars, (userId, error) => {
-      logger.error({ err: error, userId }, 'an avatar object was orphaned by a profile change')
-    }, publishing),
-    deleteProfile: deleteProfile(repository, avatars, (userId, error) => {
-      // The profile is gone and its images are not. Storage and the database cannot commit
-      // together, so this is logged and tolerated rather than retried into a hung delete.
-      logger.error({ err: error, userId }, 'avatar objects orphaned after deleting a profile')
-    }, publishing),
+    updateProfile: updateProfile(
+      repository,
+      avatars,
+      logOrphan(logger, currentRequestId, 'an avatar object was orphaned by a profile change'),
+      publishing,
+    ),
+    // The profile is gone and its images are not — logged and tolerated, see logOrphan.
+    deleteProfile: deleteProfile(
+      repository,
+      avatars,
+      logOrphan(logger, currentRequestId, 'avatar objects orphaned after deleting a profile'),
+      publishing,
+    ),
     createAvatarUpload: createAvatarUpload(repository, avatars),
   },
   logger,
