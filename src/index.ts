@@ -16,7 +16,6 @@ import { logOrphan } from './infrastructure/log-orphan.ts'
 import { createAvatarStorage } from './infrastructure/minio-avatar-storage.ts'
 import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
 import { createApp } from './interface/http/app.ts'
-import { remoteIdentityKeys } from './interface/http/authentication.ts'
 import { currentRequestId } from './interface/http/request-context.ts'
 
 /**
@@ -85,11 +84,7 @@ const app = createApp({
     createAvatarUpload: createAvatarUpload(repository, avatars),
   },
   logger,
-  authentication: {
-    jwks: remoteIdentityKeys(config.identity.jwksUrl),
-    issuer: config.identity.issuer,
-    audience: config.identity.audience,
-  },
+  authentication: config.accessToken,
   readiness: { isDraining: () => draining, canServe: () => database.ping() },
 })
 

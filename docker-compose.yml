@@ -87,10 +87,10 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: postgres://profile:profile@postgres:5432/profile
-      # No Identity Service runs here, so /v1 answers 401 while /health and /ready work.
-      # The value only has to be present at startup; it is fetched when a token arrives.
-      IDENTITY_JWKS_URL: http://identity:4000/.well-known/jwks.json
-      IDENTITY_ISSUER: http://identity:4000
+      # Identity's development secret (its config.env.example), so a token a local Identity signs
+      # verifies here, and so does one you sign yourself (README). JWT_ISSUER and JWT_AUDIENCE keep
+      # the team's defaults.
+      ACCESS_TOKEN_SECRET: replace-with-local-access-signing-secret
       LOG_LEVEL: info
       # /ready answers 503 for this long before the server stops accepting.
       SHUTDOWN_DRAIN_MS: "3000"

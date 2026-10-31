@@ -10,7 +10,7 @@ import { ForbiddenError } from './errors.ts'
  * normalising `userId` one day needs happens here, for both at once.
  */
 export function isOwner(c: Context<Env>): boolean {
-  return c.get('caller').userId === c.req.param('userId')
+  return c.get('caller').id === c.req.param('userId')
 }
 
 /**

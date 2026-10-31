@@ -1,62 +1,58 @@
-import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from 'jose'
+import { SignJWT } from 'jose'
+import type { AuthenticationOptions } from '../../src/interface/http/authentication.ts'
 
 /**
- * A stand-in for the Identity Service.
+ * A stand-in for the Identity Service, signing the way its `services/session.js` does: HS256
+ * with the secret every service shares (ADR-0022), the team's issuer and audience, the runner's
+ * id as the subject, fifteen minutes to live.
  *
- * It holds a real key pair and signs real tokens, so the middleware does genuine asymmetric
- * verification — `createLocalJWKSet` instead of `createRemoteJWKSet` is the only difference,
- * and it means the suite needs no network.
+ * The middleware does genuine verification against it; the only difference from the real stack
+ * is a secret nobody else knows, so the suite needs no network.
  */
+
+/** A key present with `undefined` removes that claim; an absent key keeps Identity's value. */
+export type TokenChanges = {
+  secret?: string
+  alg?: 'HS256' | 'HS384'
+  sub?: string | undefined
+  iss?: string | undefined
+  aud?: string | undefined
+  exp?: number | undefined
+}
+
 export type Identity = {
-  jwks: JWTVerifyGetKey
-  issuer: string
-  audience: string
-  tokenFor: (userId: string) => Promise<string>
-  tokenSignedByAnother: (userId: string) => Promise<string>
-  /** Correctly signed, correct issuer and audience — and no `exp`, so it never expires. */
-  tokenWithoutExpiry: (userId: string) => Promise<string>
+  /** What the middleware is configured with. */
+  settings: AuthenticationOptions
+  /** A token as Identity issues one, for this runner. */
+  tokenFor: (id: string) => Promise<string>
+  /** `tokenFor`, with a claim, the algorithm or the key changed — for one edge at a time. */
+  tokenWith: (id: string, changes: TokenChanges) => Promise<string>
 }
 
-type PrivateKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
+const SECRET = 'a-secret-only-this-suite-knows'
+const ISSUER = 'cant-run-alone-local'
+const AUDIENCE = 'cant-run-alone-services'
+const FIFTEEN_MINUTES = 15 * 60
 
-const ISSUER = 'https://identity.cantrunalone.test'
-const AUDIENCE = 'profile-service'
-
-async function keyPair() {
-  const { publicKey, privateKey } = await generateKeyPair('ES256', { extractable: true })
-  const jwk = await exportJWK(publicKey)
-  return { privateKey, jwk: { ...jwk, kid: 'identity', alg: 'ES256' } }
-}
-
-export async function anIdentity(): Promise<Identity> {
-  const real = await keyPair()
-  const impostor = await keyPair()
-
-  const unexpiring = (userId: string): Promise<string> =>
-    new SignJWT({})
-      .setProtectedHeader({ alg: 'ES256', kid: 'identity' })
-      .setSubject(userId)
-      .setIssuer(ISSUER)
-      .setAudience(AUDIENCE)
-      .setIssuedAt(Math.floor(new Date('2000-01-01').getTime() / 1000))
-      .sign(real.privateKey)
-
-  const sign = (key: PrivateKey, userId: string): Promise<string> =>
-    new SignJWT({})
-      .setProtectedHeader({ alg: 'ES256', kid: 'identity' })
-      .setSubject(userId)
-      .setIssuer(ISSUER)
-      .setAudience(AUDIENCE)
-      .setIssuedAt()
-      .setExpirationTime('5m')
-      .sign(key)
+export function anIdentity(): Identity {
+  const tokenWith = (id: string, changes: TokenChanges): Promise<string> => {
+    const { secret = SECRET, alg = 'HS256', ...claimChanges } = changes
+    const claims: Record<string, unknown> = {
+      sub: id,
+      iss: ISSUER,
+      aud: AUDIENCE,
+      exp: Math.floor(Date.now() / 1000) + FIFTEEN_MINUTES,
+      ...claimChanges,
+    }
+    for (const [name, value] of Object.entries(claims)) {
+      if (value === undefined) delete claims[name]
+    }
+    return new SignJWT(claims).setProtectedHeader({ alg }).setIssuedAt().sign(new TextEncoder().encode(secret))
+  }
 
   return {
-    jwks: createLocalJWKSet({ keys: [real.jwk] }),
-    issuer: ISSUER,
-    audience: AUDIENCE,
-    tokenFor: (userId) => sign(real.privateKey, userId),
-    tokenSignedByAnother: (userId) => sign(impostor.privateKey, userId),
-    tokenWithoutExpiry: unexpiring,
+    settings: { secret: SECRET, issuer: ISSUER, audience: AUDIENCE },
+    tokenFor: (id) => tokenWith(id, {}),
+    tokenWith,
   }
 }

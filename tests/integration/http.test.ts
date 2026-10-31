@@ -34,8 +34,8 @@ const storage = {
   removeAll: () => Promise.resolve(),
 }
 
-const NOK = '7f3a9c2e15'
-const BEAM = 'b41d8e0a63'
+const NOK = '33333333-3333-4333-8333-333333333333'
+const BEAM = '44444444-4444-4444-8444-444444444444'
 
 let pool: pg.Pool
 let db: NodePgDatabase
@@ -63,7 +63,7 @@ const publishing = () => ({
 beforeAll(async () => {
   pool = new pg.Pool({ connectionString: inject('databaseUrl') })
   db = drizzle(pool)
-  identity = await anIdentity()
+  identity = anIdentity()
   const repository = new DrizzleProfileRepository(db)
   events = new RecordingProfileEvents()
 
@@ -76,7 +76,7 @@ beforeAll(async () => {
       createAvatarUpload: createAvatarUpload(repository, storage),
     },
     logger: pino({ level: 'silent' }),
-    authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+    authentication: identity.settings,
     readiness: {
       isDraining: () => false,
       canServe: async () => {
@@ -209,7 +209,7 @@ describe('PUT /v1/profiles/{userId} — createProfile', () => {
   })
 
   it('401 when the token was signed by someone other than Identity', async () => {
-    const token = await identity.tokenSignedByAnother(NOK)
+    const token = await identity.tokenWith(NOK, { secret: 'not-identitys-secret' })
     const response = await app.request(`/v1/profiles/${NOK}`, {
       method: 'PUT',
       body: JSON.stringify(minimal),
@@ -454,7 +454,7 @@ describe('GET /health', () => {
         createAvatarUpload: () => Promise.reject(new Error('database is down')),
       },
       logger: pino({ level: 'silent' }),
-      authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+      authentication: identity.settings,
       readiness: alwaysReady,
     })
     await expectContract('health', 200, await isolated.request('/health'))
@@ -513,7 +513,7 @@ describe('an unexpected failure', () => {
         createAvatarUpload: onFire,
       },
       logger: pino({ level: 'silent' }),
-      authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+      authentication: identity.settings,
       readiness: alwaysReady,
     })
   }
@@ -551,12 +551,35 @@ describe('the edges of authentication', () => {
     await expectContract('getProfile', 200, response)
   })
 
-  it('refuses a token with no expiry, however well signed', async () => {
-    const token = await identity.tokenWithoutExpiry(NOK)
-    const response = await app.request(`/v1/profiles/${NOK}`, {
-      headers: { authorization: `Bearer ${token}` },
-    })
+  it.each([
+    ['signed with a secret Identity does not hold', { secret: 'not-identitys-secret' }],
+    ['signed HS384 with the right secret — HS256 only', { alg: 'HS384' }],
+    ['with no expiry, however well signed', { exp: undefined }],
+    ['that has expired', { exp: Math.floor(Date.now() / 1000) - 60 }],
+    ['with no subject', { sub: undefined }],
+    ['whose subject is not a UUID', { sub: '7f3a9c2e15' }],
+    ['with no issuer', { iss: undefined }],
+    ['from another issuer', { iss: 'https://identity.example' }],
+    ['with no audience', { aud: undefined }],
+    ['for Identity\u2019s refresh audience', { aud: 'cant-run-alone-services-refresh' }],
+  ] as const)('401 for a token %s', async (_, changes) => {
+    const token = await identity.tokenWith(NOK, changes)
+    const response = await app.request(`/v1/profiles/${NOK}`, { headers: { authorization: `Bearer ${token}` } })
     await expectContract('getProfile', 401, response)
+  })
+
+  it('takes the runner from the subject, lowercased', async () => {
+    const id = 'abcdef01-2345-4678-89ab-cdef01234567'
+    const token = await identity.tokenWith(id, { sub: id.toUpperCase() })
+    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
+
+    const created = await app.request(`/v1/profiles/${id}`, { method: 'PUT', body: JSON.stringify(minimal), headers })
+    const body = (await created.clone().json()) as Record<string, unknown>
+    await expectContract('createProfile', 201, created)
+    expect(body['userId']).toBe(id)
+
+    const shouting = await app.request(`/v1/profiles/${id.toUpperCase()}`, { method: 'PUT', body: JSON.stringify(minimal), headers })
+    await expectContract('createProfile', 403, shouting)
   })
 })
 
@@ -684,7 +707,7 @@ describe('a SyntaxError from below the route', () => {
         createAvatarUpload: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
       },
       logger: pino({ level: 'silent' }),
-      authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+      authentication: identity.settings,
       readiness: alwaysReady,
     })
     const token = await identity.tokenFor(NOK)
@@ -709,11 +732,7 @@ describe('a userId outside the bounds the contract declares', () => {
   const tooLong = 'x'.repeat(100)
 
   it('matches no profile on read — 404, not a special rejection', async () => {
-    await expectContract('getProfile', 404, await as(tooLong, `/v1/profiles/${tooLong}`))
-  })
-
-  it('fails §4 on create, like any other bad field — 422', async () => {
-    await expectContract('createProfile', 422, await put(tooLong, minimal))
+    await expectContract('getProfile', 404, await as(NOK, `/v1/profiles/${tooLong}`))
   })
 })
 
@@ -731,7 +750,7 @@ describe('GET /ready', () => {
         createAvatarUpload: () => Promise.reject(new Error('unused')),
       },
       logger: pino({ level: 'silent' }),
-      authentication: { jwks: identity.jwks, issuer: identity.issuer, audience: identity.audience },
+      authentication: identity.settings,
       readiness,
     })
 

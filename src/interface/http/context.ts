@@ -1,7 +1,7 @@
 import type { Logger } from 'pino'
 
-/** Who is asking. Produced by the auth middleware from the token's subject, never from a header. */
-export type Caller = { userId: string }
+/** Who is asking: the token's subject, lowercased. Produced by the auth middleware, never from a header. */
+export type Caller = { id: string }
 
 /** What middleware puts on the request. No route, use case or domain object sees a header or a token. */
 export type Variables = {

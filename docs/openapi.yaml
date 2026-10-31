@@ -30,10 +30,10 @@ paths:
         in: path
         required: true
         description: >-
-          The Identity Service's id for a runner. The bounds describe a valid id; they are not
-          a rejection. A value outside them is not refused here — it simply matches no profile,
-          so read, change and delete answer 404, while create fails on the same §4 rule as any
-          other bad field and answers 422.
+          The Identity Service's id for a runner: a UUID, which a token's subject gives in
+          lowercase. Only the caller's own id can be written, so any other value answers 403 on
+          create, change and delete. On read, a value that is no runner's simply matches no
+          profile and answers 404.
         schema: { type: string, minLength: 1, maxLength: 64 }
 
     put:
@@ -200,7 +200,7 @@ paths:
     get:
       operationId: documentation
       summary: This contract, rendered
-      security: []   # open: it is documentation, and no token can be minted locally anyway
+      security: []   # open: it is documentation
       description: >-
         Swagger UI for the document you are reading. Served by the service itself so the page
         can never describe a different version than the one running, and served from assets
@@ -289,11 +289,13 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >-
-        A JWT issued by the Identity Service and verified locally on every request — not
-        trusted because a gateway forwarded it. Its subject is the caller's `userId`, and the
-        403 responses below compare it against the `userId` in the path. The same comparison
-        decides whether a profile is returned whole, exact `area` and `hiddenFields` included, or
-        as its public card.
+        An access token from the Identity Service, verified locally on every request — not
+        trusted because a gateway forwarded it. HS256, signed with the secret every service
+        shares (ADR-0022); `iss` and `aud` must be the configured issuer and audience, `exp`,
+        `iss`, `aud` and `sub` must be present, and `sub` must be a UUID. Anything else is 401.
+        The subject, lowercased, is the caller's `userId`, and the 403 responses below compare it
+        against the `userId` in the path. The same comparison decides whether a profile is
+        returned whole, exact `area` and `hiddenFields` included, or as its public card.
         Ownership is an access rule of this contract; domain.md is silent on who may act.
 
     serviceToken:

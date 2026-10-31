@@ -26,10 +26,23 @@ curl localhost:3000/health   # {"status":"ok"}
 curl localhost:3000/ready    # {"status":"ready"}
 ```
 
-`/v1` answers **401**, and will until an Identity Service runs alongside it with
-`IDENTITY_JWKS_URL` pointing at it. This service verifies Identity's signature on every request
-and cannot mint a token itself — the point, not a gap. To see the profile endpoints actually
-driven, run `npm run test:int`: it generates a keypair and signs its own.
+`/v1` answers **401** without a bearer token. Tokens are Identity's access tokens: HS256, signed
+with a secret every service shares (`ACCESS_TOKEN_SECRET`, ADR-0022), issuer
+`cant-run-alone-local`, audience `cant-run-alone-services`, and the runner's id as the subject.
+Holding the secret is enough to sign one. After `npm ci`, from this directory, this makes one for
+Ray with the development secret compose uses:
+
+```bash
+TOKEN=$(node --input-type=module -e "
+import { SignJWT } from 'jose'
+console.log(await new SignJWT({}).setProtectedHeader({ alg: 'HS256' })
+  .setSubject('11111111-1111-4111-8111-111111111111')
+  .setIssuer('cant-run-alone-local').setAudience('cant-run-alone-services')
+  .setExpirationTime('15m').sign(new TextEncoder().encode('replace-with-local-access-signing-secret')))")
+curl -H "Authorization: Bearer $TOKEN" localhost:3000/v1/profiles/11111111-1111-4111-8111-111111111111
+```
+
+Ray's profile is there once `npm run db:seed` has run (see Local development).
 
 ## API
 

@@ -19,8 +19,9 @@ export type Config = {
    * on every Ctrl-C is a worse daily cost than a brief refusal during a deploy.
    */
   shutdownDrainMs: number
-  identity: {
-    jwksUrl: string
+  /** How Identity's access tokens are checked (ADR-0022): HS256 with the secret every service shares. */
+  accessToken: {
+    secret: string
     issuer: string
     audience: string
   }
@@ -36,8 +37,9 @@ export type Config = {
   events: EventPublishingConfig | undefined
 }
 
-/** This service's own name, not a setting — a token is for us or it is for someone else. */
-const AUDIENCE = 'profile-service'
+/** The team's values, the same defaults Identity and Notification use. */
+const DEFAULT_ISSUER = 'cant-run-alone-local'
+const DEFAULT_AUDIENCE = 'cant-run-alone-services'
 
 const STORAGE_REQUIRED = [
   'OBJECT_STORAGE_ENDPOINT',
@@ -47,7 +49,7 @@ const STORAGE_REQUIRED = [
   'OBJECT_STORAGE_SECRET_KEY',
 ] as const
 
-const REQUIRED = ['DATABASE_URL', 'IDENTITY_JWKS_URL', 'IDENTITY_ISSUER', ...STORAGE_REQUIRED] as const
+const REQUIRED = ['DATABASE_URL', 'ACCESS_TOKEN_SECRET', ...STORAGE_REQUIRED] as const
 
 /** pino's levels. Checked here so a typo fails with the rest, not later inside pino. */
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const
@@ -95,7 +97,7 @@ function port(raw: string, problems: string[]): number {
 
 /**
  * Just the database, for tools that touch it and nothing else — the seed script should not be
- * refused for a missing Identity setting it will never use.
+ * refused for a missing token setting it will never use.
  */
 export function loadDatabaseUrl(env: Environment = process.env): string {
   const url = read(env, 'DATABASE_URL')
@@ -156,7 +158,7 @@ function httpProblems(name: string, raw: string): string[] {
   return problems
 }
 
-/** Events alone, for the seed — it publishes what it loads but has no use for an Identity JWKS. */
+/** Events alone, for the seed — it publishes what it loads but checks no tokens. */
 export function loadEventPublishing(env: Environment = process.env): EventPublishingConfig | undefined {
   const problems: string[] = []
   const events = eventsFrom(env, problems)
@@ -175,7 +177,7 @@ function objectStorageFrom(env: Environment, problems: string[]): ObjectStorageC
   }
 }
 
-/** Storage alone, for the seed — it uploads avatars but has no use for an Identity setting. */
+/** Storage alone, for the seed — it uploads avatars but has no use for a token setting. */
 export function loadObjectStorage(env: Environment = process.env): ObjectStorageConfig {
   const problems = STORAGE_REQUIRED.filter((name) => read(env, name).length === 0).map(
     (name) => `${name} is required`,
@@ -210,10 +212,10 @@ export function loadConfig(env: Environment = process.env): Config {
     logLevel,
     databaseUrl: read(env, 'DATABASE_URL'),
     shutdownDrainMs: drainFor,
-    identity: {
-      jwksUrl: read(env, 'IDENTITY_JWKS_URL'),
-      issuer: read(env, 'IDENTITY_ISSUER'),
-      audience: AUDIENCE,
+    accessToken: {
+      secret: read(env, 'ACCESS_TOKEN_SECRET'),
+      issuer: read(env, 'JWT_ISSUER') || DEFAULT_ISSUER,
+      audience: read(env, 'JWT_AUDIENCE') || DEFAULT_AUDIENCE,
     },
     objectStorage: storage,
     events,

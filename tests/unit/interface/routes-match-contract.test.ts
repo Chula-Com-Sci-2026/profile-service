@@ -29,7 +29,7 @@ const app = createApp({
     createAvatarUpload: rejects,
   },
   logger: pino({ level: 'silent' }),
-  authentication: { jwks: rejects as never, issuer: 'issuer', audience: 'audience' },
+  authentication: { secret: 'secret', issuer: 'issuer', audience: 'audience' },
   readiness: { isDraining: () => false, canServe: () => Promise.resolve(true) },
 })
 

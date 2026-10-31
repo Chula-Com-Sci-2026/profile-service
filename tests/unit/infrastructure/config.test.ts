@@ -3,8 +3,7 @@ import { loadConfig, loadDatabaseUrl, loadEventPublishing } from '../../../src/i
 
 const complete = {
   DATABASE_URL: 'postgres://profile:profile@localhost:5432/profile',
-  IDENTITY_JWKS_URL: 'http://localhost:4000/.well-known/jwks.json',
-  IDENTITY_ISSUER: 'http://localhost:4000',
+  ACCESS_TOKEN_SECRET: 'replace-with-local-access-signing-secret',
   OBJECT_STORAGE_ENDPOINT: 'http://minio:9000',
   OBJECT_STORAGE_PUBLIC_ENDPOINT: 'http://localhost:9000',
   OBJECT_STORAGE_BUCKET: 'profile-service',
@@ -15,7 +14,7 @@ const complete = {
 describe('loadConfig — what it requires', () => {
   it('reports every missing value at once, so a fresh environment costs one restart', () => {
     expect(() => loadConfig({})).toThrow(
-      /DATABASE_URL is required; IDENTITY_JWKS_URL is required; IDENTITY_ISSUER is required/,
+      /DATABASE_URL is required; ACCESS_TOKEN_SECRET is required/,
     )
   })
 
@@ -26,7 +25,7 @@ describe('loadConfig — what it requires', () => {
   it('accepts a complete environment', () => {
     const config = loadConfig(complete)
     expect(config.databaseUrl).toBe(complete.DATABASE_URL)
-    expect(config.identity.issuer).toBe('http://localhost:4000')
+    expect(config.accessToken.secret).toBe('replace-with-local-access-signing-secret')
   })
 })
 
@@ -46,11 +45,18 @@ describe('loadConfig — defaults', () => {
     expect(config.objectStorage.publicEndpoint).toBe('http://localhost:9000')
   })
 
-  it('names the audience itself — it is this service, not a setting', () => {
-    expect(loadConfig(complete).identity.audience).toBe('profile-service')
-    expect(loadConfig({ ...complete, IDENTITY_AUDIENCE: 'somebody-else' }).identity.audience).toBe(
-      'profile-service',
-    )
+  it('checks tokens against the team\u2019s issuer and audience unless told otherwise', () => {
+    expect(loadConfig(complete).accessToken).toEqual({
+      secret: 'replace-with-local-access-signing-secret',
+      issuer: 'cant-run-alone-local',
+      audience: 'cant-run-alone-services',
+    })
+  })
+
+  it('reads JWT_ISSUER and JWT_AUDIENCE when they are set', () => {
+    const { accessToken } = loadConfig({ ...complete, JWT_ISSUER: 'issuer-x', JWT_AUDIENCE: 'audience-y' })
+    expect(accessToken.issuer).toBe('issuer-x')
+    expect(accessToken.audience).toBe('audience-y')
   })
 })
 
@@ -98,8 +104,7 @@ describe('loadConfig — one restart, not several', () => {
       }
     })()
 
-    expect(message).toContain('IDENTITY_JWKS_URL is required')
-    expect(message).toContain('IDENTITY_ISSUER is required')
+    expect(message).toContain('ACCESS_TOKEN_SECRET is required')
     expect(message).toContain('LOG_LEVEL must be one of')
     expect(message).toContain('PORT must be a port number')
     expect(message).toContain('SHUTDOWN_DRAIN_MS must be a whole number')
@@ -107,7 +112,7 @@ describe('loadConfig — one restart, not several', () => {
 })
 
 describe('loadDatabaseUrl', () => {
-  it('asks for nothing else, so the seed is not refused over an Identity setting', () => {
+  it('asks for nothing else, so the seed is not refused over the token secret', () => {
     expect(loadDatabaseUrl({ DATABASE_URL: 'postgres://x' })).toBe('postgres://x')
   })
 

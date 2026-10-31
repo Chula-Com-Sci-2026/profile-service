@@ -86,7 +86,7 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
   })
 
   // The contract, served by the service it describes — outside /v1 because it is not a profile
-  // operation, and open because a token cannot be minted without an Identity to mint it.
+  // operation, and open because it is documentation.
   app.get('/docs', documentationPage)
   app.get('/docs/:asset', documentationAsset)
   app.get('/openapi.yaml', contractDocument())
