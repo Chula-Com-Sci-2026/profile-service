@@ -29,7 +29,7 @@
 
 Identity is upstream. We are **conformist**: a profile's `id` is Identity's id for its runner — a UUID, the subject of the runner's access token — taken as given and never made here. Identity may delete a runner; nothing tells us, so a profile can outlive the runner it describes. **Not handled yet.**
 
-Buddy Discovery is downstream, and we are its **supplier**: it builds its own copy of how each runner appears to other runners from **ProfileUpdated**, which goes out after every change to a profile and carries the runner's **public card** — visibility already applied, a hidden field as `null`, the point only as its area cell. A field the runner hid is hidden from matching too: nothing hidden leaves this service. Because Buddy Discovery keeps its own copy, this service needs no bulk read.
+Buddy Discovery is downstream, and we are its **supplier**: it builds its own copy of how each runner appears to other runners from **ProfileUpdated**, which goes out on RabbitMQ after every change to a profile. It carries the runner's **public card** — visibility already applied, a hidden field as `null`, the point only as its area cell — and the profile's **revision**, so a copy can tell a newer card from an older one that arrived late. A field the runner hid is hidden from matching too: nothing hidden leaves this service. When Buddy Discovery's copy has to be rebuilt, every profile's card can be sent again, each under the revision it already has.
 
 ## 2. Ubiquitous language
 
@@ -53,6 +53,7 @@ Use these words in code, tests, API fields, commit messages, and conversation. A
 | **Photo** | A picture of the runner, kept in this service's object storage. `photoRef` is its key there; `photoUrl` is its public address, worked out from the key wherever a profile is shown. |
 | **Public card** | The part of a profile other runners see: the fields the runner has not hidden, with the point only as its area cell. |
 | **Hidden field** | A field the runner has chosen to leave off their public card. |
+| **Revision** | A profile's version: 1 when it is created, one more with every change. It travels with ProfileUpdated, so a copy can tell the newer of two cards. |
 
 ## 3. The aggregate
 
@@ -71,14 +72,15 @@ Profile (root)
 ├─ usualDistance  UsualDistance                  union
 ├─ gear           string[]
 ├─ photoRef       string
-└─ hiddenFields   HiddenField[]                  union
+├─ hiddenFields   HiddenField[]                  union
+└─ revision       number             required
 
    areaCell()     AreaCell           derived     class
 ```
 
 **One profile per runner.** `Profile` is the single aggregate root and the only entity here — there are no other aggregates in this context, and the whole profile is loaded and saved as one unit. Everything marked `union` or `class` is a value object: no identity, no lifecycle of its own, immutable, compared by value — the marker says only how it is implemented. The unmarked fields are plain primitives, the same kind of value but with no type of their own, so their rules are enforced by the `Profile` constructor instead. `areaCell` is not stored: it is worked out from `latitude` and `longitude` whenever it is asked for.
 
-Of the fields a runner fills in, `name`, the pace, `experience`, `area`, the point and `availability` are required; `bio`, `usualDistance`, `gear` and the photo are their choice. **An unset field is `null`** — never absent, and gear with no items is `null`, never an empty list — the same `null` a request carries and the database stores. `hiddenFields` is always a list, empty until the runner hides something.
+Of the fields a runner fills in, `name`, the pace, `experience`, `area`, the point and `availability` are required; `bio`, `usualDistance`, `gear` and the photo are their choice. **An unset field is `null`** — never absent, and gear with no items is `null`, never an empty list — the same `null` a request carries and the database stores. `hiddenFields` is always a list, empty until the runner hides something. `revision` is the profile's own, never a runner's to write.
 
 ### Behaviour
 
@@ -93,7 +95,7 @@ The team's operations, one application file each:
 - **getPublicProfile()** — the public card, for anyone, its owner included.
 - **publicCard()** — on the aggregate itself: the profile as other runners see it (§4). The one place field visibility is applied.
 
-Every operation that changes a profile publishes ProfileUpdated (§1). `id` never changes. There is no way to list or search profiles, and none to delete one.
+Every operation that changes a profile raises its revision by one and publishes ProfileUpdated (§1) — even one that leaves every field as it was. `id` never changes. There is no way to list or search profiles, and none to delete one.
 
 ## 4. Fields and their rules
 
@@ -111,6 +113,7 @@ Every operation that changes a profile publishes ProfileUpdated (§1). `id` neve
 | `gear` | Up to 10 items, each 1–50 characters after trimming. Items keep the runner's order; an item equal to an earlier one once trimmed is the same item, and the limit counts items after that. No items is no gear. |
 | `photoRef` | Up to 128 characters. |
 | `hiddenFields` | A set of `bio` · `pace` · `availability` · `experience` · `usualDistance` · `gear`, kept in that order. `pace` hides `paceMin` and `paceMax` together. `id`, `name`, `area`, the area cell and the photo can never be hidden. |
+| `revision` | A whole number, 1 or more. |
 
 Character counts are Unicode code points: an emoji counts as one character, not two.
 
@@ -129,6 +132,7 @@ An invariant is a rule that must hold every time a profile is saved, whatever el
 | Invariant | Enforced by |
 |---|---|
 | One profile per runner | `id PRIMARY KEY`. The `Profile` constructor cannot enforce this — it sees one profile and would have to look at the others. |
+| A profile's revision rises by one with every change | The conditional update: a change is written only where the stored revision is still the one it was made from (`WHERE id = … AND revision = …`). Of two changes made from the same revision, one is written and the other is made again on the new one. The `Profile` constructor cannot enforce this either: it sees one version of the profile. |
 
 Every other rule in §4 constrains a single field on its own, so the `Profile` constructor is enough for them.
 

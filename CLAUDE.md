@@ -9,7 +9,7 @@ A demonstration of microservices + DDD, so architectural clarity outranks clever
 |---|---|
 | `docs/domain.md` | **authoritative.** What a profile is and the rules it obeys. If code disagrees, the code is the bug |
 | `docs/openapi.yaml` | the HTTP contract, derived from the spec. Tests check the code against it. The service renders it at `/docs` and serves the file at `/openapi.yaml` |
-| `docs/build_plan.md` | **Decisions taken** (17) and **Deferred on purpose** (5). Settled — do not re-litigate or report as findings |
+| `docs/build_plan.md` | **Decisions taken** (18) and **Deferred on purpose** (3). Settled — do not re-litigate or report as findings |
 | `README.md` | how a human runs it |
 
 ## Commands
@@ -34,7 +34,8 @@ optional *input* key is omitted, never passed as `undefined`.
 
 **Layers are enforced by `npm run lint`, not convention.** `interface/http → application → domain
 ← infrastructure`. `domain/` imports nothing — no Hono, Drizzle, Zod, pino. `src/index.ts` is the
-composition root and the only file allowed to reach across zones. The lint error names the rule.
+composition root and, with the one-shot commands beside it (`migrate.ts`, `republish-events.ts`), the
+only code allowed to reach across zones. The lint error names the rule.
 
 **Contract first.** To change behaviour, edit `docs/openapi.yaml` first; the coverage assertion in
 `tests/integration/http.test.ts` then fails naming the response nothing exercises. Implement until
