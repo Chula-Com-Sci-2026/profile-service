@@ -186,7 +186,7 @@ Order is error handler outermost, then request context, then auth, then routes �
 
 Until here the service runs on a laptop. This phase makes it an artifact.
 
-- **Multi-stage `Dockerfile`** — a build stage running `npm ci` and `npm run build`, then a runtime stage on the same `node:24.21-alpine` with `npm ci --omit=dev`, carrying `dist/` and `drizzle/` and nothing else. Pinned to the minor, not floating: the image a teammate builds should be the image you built. Verified empty of `typescript`, `vitest`, `eslint`, `drizzle-kit`, `pino-pretty` and `ajv`
+- **Multi-stage `Dockerfile`** — a build stage running `npm ci` and `npm run build`, then a runtime stage on the same `node:24.22-alpine` with `npm ci --omit=dev`, carrying `dist/` and `drizzle/` and nothing else. Pinned to the minor, not floating: the image a teammate builds should be the image you built. Verified empty of `typescript`, `vitest`, `eslint`, `drizzle-kit`, `pino-pretty` and `ajv`
 - **`.dockerignore` first** — without one, `.env` enters the build context and can reach the image. That is a credential leak, not a size problem
 - Run as the image's own non-root `node` user
 - **`HEALTHCHECK` against `/ready`**, not `/health` — compose's `depends_on: service_healthy` gates whether to send work, which is a readiness question. `/health` stays the liveness signal for whatever restarts containers

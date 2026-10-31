@@ -2,7 +2,7 @@
 
 # Pinned to the minor, not floating: the image a teammate builds should be the image you built,
 # and bumping it should be a commit somebody can see.
-ARG NODE_IMAGE=node:24.21-alpine
+ARG NODE_IMAGE=node:24.22-alpine
 
 # ---- build ------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS build
