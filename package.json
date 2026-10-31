@@ -48,7 +48,9 @@
   "overrides": {
     "@esbuild-kit/core-utils": {
       "esbuild": "^0.25.4"
-    }
+    },
+    "minimatch": "^11.0.3",
+    "glob": "^14.0.3"
   },
   "allowScripts": {
     "esbuild": false,
