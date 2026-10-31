@@ -12,8 +12,6 @@ import { setFieldVisibility } from './application/set-field-visibility.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
-import { httpProfileEvents, logUndelivered } from './infrastructure/http-profile-events.ts'
-import { identityServiceTokens } from './infrastructure/identity-service-tokens.ts'
 import { logOrphan } from './infrastructure/log-orphan.ts'
 import { createPhotoStorage } from './infrastructure/minio-photo-storage.ts'
 import { photoUrlFor } from './infrastructure/photo-url.ts'
@@ -52,26 +50,8 @@ const photoUrl = photoUrlFor(config.objectStorage)
 /** A replaced or removed photo storage would not delete — logged and tolerated, see logOrphan. */
 const onOrphan = logOrphan(logger, currentCorrelationId, 'a photo object was orphaned')
 
-/**
- * Profile events to Buddy Discovery (ADR-0019): REST now, a broker later, behind one port.
- * Off while no subscriber is configured, so a clone runs with nobody to tell.
- */
-const events =
-  config.events === undefined
-    ? silentProfileEvents
-    : httpProfileEvents({
-        subscribers: config.events.subscribers,
-        tokens: identityServiceTokens({
-          tokenUrl: config.events.identityTokenUrl,
-          clientId: config.events.clientId,
-          clientSecret: config.events.clientSecret,
-        }),
-        currentCorrelationId,
-        photoUrl,
-      })
-if (config.events === undefined) logger.info('no EVENT_SUBSCRIBERS configured: profile events are not published')
-
-const publishing: Publishing = { events, onUndelivered: logUndelivered(logger, currentCorrelationId) }
+/** Nothing sends profile events until the outbox relays them. */
+const publishing: Publishing = { events: silentProfileEvents, onUndelivered: () => {} }
 
 /** Flipped before anything stops accepting, so /ready answers 503 first. */
 let draining = false

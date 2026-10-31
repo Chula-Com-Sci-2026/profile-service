@@ -14,8 +14,8 @@ info:
     only as its cell. Every key of a card, and of the owner's view, is always present; a field
     that is hidden or unset is `null`.
 
-    It also sends an event to the services that subscribe, `ProfileUpdated`, described under
-    `webhooks`.
+    After every change it also publishes `ProfileUpdated` on RabbitMQ. That event's contract is
+    `docs/profile-events.schema.json`, not this document.
 
     Text fields are trimmed before their length rules apply, so whitespace alone counts as
     empty. A request body's unknown fields are ignored, not refused.
@@ -297,36 +297,6 @@ paths:
             application/yaml: {}
         default: { $ref: '#/components/responses/InternalError' }
 
-webhooks:
-  ProfileUpdated:
-    post:
-      summary: A profile changed
-      description: >-
-        Sent to every subscriber listed in this service's configuration (ADR-0019) after every
-        change is saved — a save, a visibility change, a photo attached or removed — and awaited:
-        a synchronous call, not a broker. `data.card` is the runner's public card, exactly as
-        `getPublicProfile` answers it: visibility applied, a hidden field as `null`, the area only
-        as its cell. Nothing hidden is sent. Each attempt has a 1 s timeout; three attempts,
-        retried on a network error, a timeout, 408, 429 or 5xx, not on any other 4xx. A
-        subscriber still down after them loses the event (ADR-0019). Deduplicate by `id`. Order
-        by `time` per `subject`. Equal times are applied in arrival order. A breaking change to
-        `data` moves `dataschema` to the next number; an added optional field does not.
-      security:
-        - serviceToken: []
-      parameters:
-        - name: X-Correlation-Id
-          in: header
-          required: true
-          description: The correlation id of the request that caused the event, or a fresh one when no request did.
-          schema: { $ref: '#/components/schemas/CorrelationId' }
-      requestBody:
-        required: true
-        content:
-          application/cloudevents+json:
-            schema: { $ref: '#/components/schemas/ProfileUpdatedEvent' }
-      responses:
-        '2XX': { description: Delivered. Any 2xx counts. }
-
 components:
   securitySchemes:
     bearerAuth:
@@ -341,15 +311,6 @@ components:
         The subject, lowercased, is the caller — "me" in every `/api/v1/me` path — so a runner
         acts only on their own profile, and there is no ownership check and no 403. Who may act
         is an access rule of this contract; domain.md is silent on it.
-
-    serviceToken:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: >-
-        On the events this service sends: a short-lived JWT the Identity Service issues to this
-        service through OAuth 2.0 client credentials (ADR-0014). Its subject is the calling
-        service, not a runner. Subscribers verify it with Identity's public keys.
 
   responses:
     Profile:
@@ -585,8 +546,8 @@ components:
     PublicCard:
       type: object
       description: >-
-        A profile as other runners see it — the team's "public card", and the card
-        `ProfileUpdated` carries. Every key is always present: a field that is hidden or unset
+        A profile as other runners see it — the team's "public card", and, with the profile's
+        revision added, the payload `ProfileUpdated` carries. Every key is always present: a field that is hidden or unset
         is `null`, gear included, never `[]`. `id`, `name`, `area` and `areaCell` are never
         `null`; `photoUrl` is `null` without a photo. The exact point and the hidden set are
         never here.
@@ -636,37 +597,3 @@ components:
             request body. A problem inside a field is keyed by the field itself (`gear`, not
             `gear[3]`). Every malformed field is named at once; of the rules in domain.md §4,
             the first one broken.
-
-    CloudEvent:
-      type: object
-      description: >-
-        CloudEvents 1.0, structured mode: the envelope every event travels in, the same over
-        HTTP now and on a broker later.
-      required: [specversion, id, source, type, time, subject, dataschema]
-      properties:
-        specversion:     { const: '1.0' }
-        id:              { type: string, minLength: 1, description: Unique per event. Deduplicate by it. }
-        source:          { const: profile-service }
-        type:            { type: string }
-        time:
-          type: string
-          # A pattern rather than `format: date-time`, which the contract tests' Ajv ignores.
-          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$'
-          description: When the change was saved. RFC 3339, UTC, e.g. 2026-10-04T11:20:00.000Z.
-        subject:         { $ref: '#/components/schemas/Id' }
-        datacontenttype: { const: application/json }
-        dataschema:      { type: string, minLength: 1, description: Names the shape of `data` and its version. }
-
-    ProfileUpdatedEvent:
-      allOf: [{ $ref: '#/components/schemas/CloudEvent' }]
-      required: [datacontenttype, data]
-      unevaluatedProperties: false
-      properties:
-        type:       { const: ProfileUpdated }
-        dataschema: { const: 'urn:cant-run-alone:profile-service:ProfileUpdated:2' }
-        data:
-          type: object
-          additionalProperties: false
-          required: [card]
-          properties:
-            card: { $ref: '#/components/schemas/PublicCard' }

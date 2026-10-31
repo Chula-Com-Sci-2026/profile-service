@@ -1,4 +1,5 @@
-import type { ErrorLog } from './http-profile-events.ts'
+/** The one call a logger must answer here — pino's `error` fits it. */
+export type ErrorLog = { error: (fields: object, message: string) => void }
 
 /**
  * The log line for a photo object storage could not remove. Storage and the database cannot

@@ -33,8 +33,6 @@ export type Config = {
     secretAccessKey: string
     uploadExpiresInSeconds: number
   }
-  /** Where profile events go, and how to authenticate. Undefined while no subscriber is listed. */
-  events: EventPublishingConfig | undefined
 }
 
 /** The team's values, the same defaults Identity and Notification use. */
@@ -107,65 +105,6 @@ export function loadDatabaseUrl(env: Environment = process.env): string {
 
 export type ObjectStorageConfig = Config['objectStorage']
 
-export type EventPublishingConfig = {
-  subscribers: string[]
-  identityTokenUrl: string
-  clientId: string
-  clientSecret: string
-}
-
-/**
- * ADR-0019: "Subscribers are listed in each publisher's configuration." None listed means
- * publishing is off — a clone, a laptop and the test suite run with no Buddy Discovery. Once one
- * is listed, the three Identity settings become required.
- */
-function eventsFrom(env: Environment, problems: string[]): EventPublishingConfig | undefined {
-  const subscribers = read(env, 'EVENT_SUBSCRIBERS')
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0)
-  const identityTokenUrl = read(env, 'IDENTITY_TOKEN_URL')
-  const clientId = read(env, 'SERVICE_CLIENT_ID')
-  const clientSecret = read(env, 'SERVICE_CLIENT_SECRET')
-  if (subscribers.length === 0) return undefined
-
-  const needed = { IDENTITY_TOKEN_URL: identityTokenUrl, SERVICE_CLIENT_ID: clientId, SERVICE_CLIENT_SECRET: clientSecret }
-  for (const [name, value] of Object.entries(needed)) {
-    if (value.length === 0) problems.push(`${name} is required when EVENT_SUBSCRIBERS is set`)
-  }
-  for (const subscriber of subscribers) {
-    if (!URL.canParse(subscriber)) problems.push(`EVENT_SUBSCRIBERS must list URLs, not ${JSON.stringify(subscriber)}`)
-    else problems.push(...httpProblems('EVENT_SUBSCRIBERS', subscriber))
-  }
-  if (identityTokenUrl.length > 0) {
-    if (!URL.canParse(identityTokenUrl)) {
-      problems.push(`IDENTITY_TOKEN_URL must be a URL, not ${JSON.stringify(identityTokenUrl)}`)
-    } else problems.push(...httpProblems('IDENTITY_TOKEN_URL', identityTokenUrl))
-  }
-  return { subscribers, identityTokenUrl, clientId, clientSecret }
-}
-
-/**
- * A URL that parses is not yet one a POST can reach: `localhost:4100/events` parses, with
- * `localhost:` as its scheme. Refused here, at startup, rather than by every delivery after it.
- * Credentials are refused without being repeated, so the refusal cannot leak them into a log.
- */
-function httpProblems(name: string, raw: string): string[] {
-  const url = new URL(raw)
-  const problems: string[] = []
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') problems.push(`${name} must use http or https, not ${url.protocol}`)
-  if (url.username !== '' || url.password !== '') problems.push(`${name} must not carry credentials`)
-  return problems
-}
-
-/** Events alone, for the seed — it publishes what it loads but checks no tokens. */
-export function loadEventPublishing(env: Environment = process.env): EventPublishingConfig | undefined {
-  const problems: string[] = []
-  const events = eventsFrom(env, problems)
-  if (problems.length > 0) throw new Error(`configuration: ${problems.join('; ')}`)
-  return events
-}
-
 function objectStorageFrom(env: Environment, problems: string[]): ObjectStorageConfig {
   return {
     endpoint: read(env, 'OBJECT_STORAGE_ENDPOINT'),
@@ -200,7 +139,6 @@ export function loadConfig(env: Environment = process.env): Config {
   const listenOn = port(read(env, 'PORT'), problems)
   const drainFor = milliseconds(read(env, 'SHUTDOWN_DRAIN_MS'), 'SHUTDOWN_DRAIN_MS', 0, problems)
   const storage = objectStorageFrom(env, problems)
-  const events = eventsFrom(env, problems)
 
   if (problems.length > 0) {
     throw new Error(`configuration: ${problems.join('; ')}`)
@@ -218,6 +156,5 @@ export function loadConfig(env: Environment = process.env): Config {
       audience: read(env, 'JWT_AUDIENCE') || DEFAULT_AUDIENCE,
     },
     objectStorage: storage,
-    events,
   }
 }

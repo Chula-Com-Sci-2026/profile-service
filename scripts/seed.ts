@@ -6,13 +6,10 @@ import { createPhotoUpload } from '../src/application/create-photo-upload.ts'
 import { StorageUnavailableError } from '../src/application/errors.ts'
 import { saveProfile } from '../src/application/save-profile.ts'
 import type { Profile } from '../src/domain/profile.ts'
-import { loadDatabaseUrl, loadEventPublishing, loadObjectStorage } from '../src/infrastructure/config.ts'
+import { loadDatabaseUrl, loadObjectStorage } from '../src/infrastructure/config.ts'
 import { createDatabase } from '../src/infrastructure/database.ts'
 import { DrizzleProfileRepository } from '../src/infrastructure/drizzle-profile-repository.ts'
-import { httpProfileEvents } from '../src/infrastructure/http-profile-events.ts'
-import { identityServiceTokens } from '../src/infrastructure/identity-service-tokens.ts'
 import { createPhotoStorage } from '../src/infrastructure/minio-photo-storage.ts'
-import { photoUrlFor } from '../src/infrastructure/photo-url.ts'
 import { silentProfileEvents } from '../src/infrastructure/silent-profile-events.ts'
 import { toContent } from '../src/interface/http/profile-input.ts'
 import { profileSave } from '../src/interface/http/validators.ts'
@@ -40,34 +37,10 @@ const database = createDatabase(loadDatabaseUrl(), (error) => {
 })
 const storageSettings = loadObjectStorage()
 const photos = createPhotoStorage(storageSettings)
-const photoUrl = photoUrlFor(storageSettings)
 const repository = new DrizzleProfileRepository(database.db)
 
-/**
- * The rows go in under a transaction, and an event must not leave before its change is
- * committed — so saves publish nothing, and each runner is published once the transaction
- * commits.
- */
+/** Nothing sends profile events until the outbox relays them. */
 const quiet = { events: silentProfileEvents, onUndelivered: () => {} }
-const eventSettings = loadEventPublishing()
-const publishing = {
-  events:
-    eventSettings === undefined
-      ? silentProfileEvents
-      : httpProfileEvents({
-          subscribers: eventSettings.subscribers,
-          tokens: identityServiceTokens({
-            tokenUrl: eventSettings.identityTokenUrl,
-            clientId: eventSettings.clientId,
-            clientSecret: eventSettings.clientSecret,
-          }),
-          currentCorrelationId: () => undefined,
-          photoUrl,
-        }),
-  onUndelivered: (id: string, error: unknown) => {
-    console.error(`the event for ${id} was not delivered:`, error instanceof Error ? error.message : error)
-  },
-}
 const seeded: Profile[] = []
 
 try {
@@ -91,17 +64,13 @@ try {
     }
   })
 
-  for (const profile of seeded) {
-    await publishing.events.updated(profile).catch((error: unknown) => publishing.onUndelivered(profile.id, error))
-  }
-
   // After the rows commit: holding a transaction open across calls to storage would be a poor trade
   // for a demo seeder. A runner with no photos/{id}.png simply has no photo.
   const attached = await seedPhotos(
     seeded.map((profile) => profile.id),
     {
       createPhotoUpload: createPhotoUpload(repository, photos),
-      attachPhoto: attachPhoto(repository, photos, (id, error) => console.error(`a photo object was orphaned for ${id}:`, error), publishing),
+      attachPhoto: attachPhoto(repository, photos, (id, error) => console.error(`a photo object was orphaned for ${id}:`, error), quiet),
       photoOf: (id) => {
         const file = here(`./photos/${id}.png`)
         return existsSync(file) ? readFileSync(file) : undefined
