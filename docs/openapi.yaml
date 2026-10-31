@@ -48,12 +48,11 @@ paths:
             schema: { $ref: '#/components/schemas/ProfileWrite' }
       responses:
         '201': { $ref: '#/components/responses/Profile' }
-        '400': { $ref: '#/components/responses/Problem' }   # body is malformed or has an unknown field
-        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
-        '403': { $ref: '#/components/responses/Problem' }   # a runner may only create their own profile
-        '409': { $ref: '#/components/responses/Problem' }   # a profile already exists
-        '422': { $ref: '#/components/responses/Problem' }   # a value breaks a rule in domain.md §4
-        default: { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '403': { $ref: '#/components/responses/Forbidden' }   # a runner may only create their own profile
+        '409': { $ref: '#/components/responses/ProfileAlreadyExists' }   # a profile already exists
+        '422': { $ref: '#/components/responses/ValidationFailed' }   # malformed, the wrong shape, or a value that breaks a rule in domain.md §4
+        default: { $ref: '#/components/responses/InternalError' }
 
     get:
       operationId: getProfile
@@ -71,9 +70,9 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/Profile'
                   - $ref: '#/components/schemas/PublicCard'
-        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
-        '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
-        default: { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
+        default: { $ref: '#/components/responses/InternalError' }
 
     patch:
       operationId: updateProfile
@@ -86,12 +85,11 @@ paths:
             schema: { $ref: '#/components/schemas/ProfilePatch' }
       responses:
         '200': { $ref: '#/components/responses/Profile' }
-        '400': { $ref: '#/components/responses/Problem' }   # body is malformed or has an unknown field
-        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
-        '403': { $ref: '#/components/responses/Problem' }   # only the owner may change a profile
-        '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
-        '422': { $ref: '#/components/responses/Problem' }   # a value breaks a rule in domain.md §4
-        default: { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '403': { $ref: '#/components/responses/Forbidden' }   # only the owner may change a profile
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
+        '422': { $ref: '#/components/responses/ValidationFailed' }   # malformed, the wrong shape, or a value that breaks a rule in domain.md §4
+        default: { $ref: '#/components/responses/InternalError' }
 
     delete:
       operationId: deleteProfile
@@ -100,10 +98,10 @@ paths:
         '204':
           description: Deleted
           headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
-        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
-        '403': { $ref: '#/components/responses/Problem' }   # only the owner may delete a profile
-        '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
-        default: { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '403': { $ref: '#/components/responses/Forbidden' }   # only the owner may delete a profile
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
+        default: { $ref: '#/components/responses/InternalError' }
 
   /v1/profiles/{userId}/avatar-uploads:
     parameters:
@@ -145,10 +143,10 @@ paths:
                     maxLength: 128
                     description: The key the upload will occupy. Send it back as `avatarRef`.
                   expiresInSeconds: { type: integer, minimum: 1 }
-        '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
-        '403': { $ref: '#/components/responses/Problem' }   # a runner may only upload their own
-        '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
-        default: { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '403': { $ref: '#/components/responses/Forbidden' }   # a runner may only upload their own
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
+        default: { $ref: '#/components/responses/InternalError' }
 
   /up:
     parameters:
@@ -244,7 +242,7 @@ paths:
           headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             application/yaml: {}
-        default: { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/InternalError' }
 
 webhooks:
   ProfileUpdated:
@@ -334,12 +332,59 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Profile' }
 
-    Problem:
-      description: RFC 9457 problem details
+    Unauthorized:
+      description: No token, or it does not verify
       headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
       content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+        application/json:
+          schema:
+            allOf: [{ $ref: '#/components/schemas/ApiError' }]
+            properties: { code: { const: unauthorized }, fieldErrors: false }
+
+    Forbidden:
+      description: A runner may only write their own profile
+      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
+      content:
+        application/json:
+          schema:
+            allOf: [{ $ref: '#/components/schemas/ApiError' }]
+            properties: { code: { const: forbidden }, fieldErrors: false }
+
+    ProfileNotFound:
+      description: No profile for that runner
+      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
+      content:
+        application/json:
+          schema:
+            allOf: [{ $ref: '#/components/schemas/ApiError' }]
+            properties: { code: { const: profile_not_found }, fieldErrors: false }
+
+    ProfileAlreadyExists:
+      description: The runner already has a profile — one per runner
+      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
+      content:
+        application/json:
+          schema:
+            allOf: [{ $ref: '#/components/schemas/ApiError' }]
+            properties: { code: { const: profile_already_exists }, fieldErrors: false }
+
+    ValidationFailed:
+      description: The body is malformed, has the wrong shape or misses a required field, or a value breaks a rule in domain.md §4
+      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
+      content:
+        application/json:
+          schema:
+            allOf: [{ $ref: '#/components/schemas/ApiError' }]
+            properties: { code: { const: validation_failed } }
+
+    InternalError:
+      description: Anything else. Logged here; says nothing useful there
+      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
+      content:
+        application/json:
+          schema:
+            allOf: [{ $ref: '#/components/schemas/ApiError' }]
+            properties: { code: { const: internal_error }, fieldErrors: false }
 
   headers:
     CorrelationId:
@@ -487,13 +532,30 @@ components:
       pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
       description: A UUID, lowercase.
 
-    Problem:
+    ApiError:
       type: object
-      required: [title, status]
+      description: >-
+        Every error this service answers: the team frontend's ApiErrorBody. Branch on `code`,
+        never on `message`.
+      additionalProperties: false
+      required: [code, message, correlationId]
       properties:
-        title:  { type: string }
-        status: { type: integer }
-        detail: { type: string, description: 'Human prose, for people. Do not parse.' }
+        code:
+          type: string
+          description: >-
+            Stable, lowercase snake_case: unauthorized (401), forbidden (403), profile_not_found
+            (404), not_found (404, no such route), profile_already_exists (409),
+            validation_failed (422), internal_error (500).
+        message: { type: string, description: 'Human prose, for people. Do not parse.' }
+        correlationId: { $ref: '#/components/schemas/CorrelationId' }
+        fieldErrors:
+          type: object
+          additionalProperties: { type: string }
+          description: >-
+            On a 422, when a field can be named: one message per field, keyed by its name in the
+            request body. A problem inside a field is keyed by the field itself (`area`, not
+            `area.latitude`). Every malformed field is named at once; of the rules in domain.md §4,
+            the first one broken.
 
     CloudEvent:
       type: object

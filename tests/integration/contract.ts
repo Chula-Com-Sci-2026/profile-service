@@ -63,7 +63,7 @@ function responsePointer(operationId: string, status: number): string {
     throw new Error(`openapi.yaml documents neither ${status} nor a default for "${operationId}"`)
   }
   exercised.add(`${operationId} ${pointer.split('/').pop() ?? status}`)
-  // `$ref: '#/components/responses/Problem'` — follow it rather than dereferencing by hand.
+  // `$ref: '#/components/responses/Unauthorized'` — follow it rather than dereferencing by hand.
   const ref = node['$ref']
   return typeof ref === 'string' ? ref.slice(1) : pointer
 }
@@ -143,7 +143,7 @@ export async function expectContract(
   //
   // Keyed on the media type, never on "no schema found". Keyed the other way, a typo in the
   // document — `schena:` — makes every response schemaless and downgrades ~40 assertions to
-  // "not the empty string". Measured: the whole suite passed with Problem's schema misspelt.
+  // "not the empty string". Measured: the whole suite passed with an error schema misspelt.
   if ((content[mediaType] as Node | undefined)?.['schema'] === undefined) {
     expect(
       UNCONSTRAINED.has(mediaType),

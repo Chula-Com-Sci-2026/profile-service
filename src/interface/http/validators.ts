@@ -4,9 +4,10 @@ import { z } from 'zod'
  * Shape only — the rules live in the domain.
  *
  * These say "this is a string", "this is a number", "there is no such field". They do not say
- * "1 to 50 characters" or "one of male, female, non_binary": those are §4's, and breaking one
- * is a 422 where a malformed body is a 400. Keeping the split here is what makes the two
- * status codes mean different things.
+ * "1 to 50 characters" or "one of male, female, non_binary": those are §4's. Both kinds of
+ * problem answer 422; the split is about where each check lives, so every rule has one home —
+ * and it is why every malformed field is named at once, while a domain rule reports the first
+ * it finds broken.
  */
 const runTime = z.strictObject({
   dayOfWeek: z.string(),
@@ -22,7 +23,7 @@ const point = z.strictObject({
 /**
  * `uniqueItems: true` in openapi.yaml. Without this the domain quietly deduplicates and the
  * client gets a 201 describing a set it did not send — the server rewriting the request rather
- * than rejecting it. Uniqueness is shape, so it is a 400.
+ * than rejecting it. Uniqueness is shape, so it is checked here.
  */
 const noRepeats =
   <T>(identify: (item: T) => string) =>
@@ -35,7 +36,7 @@ const paceRange = z.strictObject({
   slowest: z.number(),
 })
 
-/** Exact repeats are shape (400); items equal only once trimmed are the domain's to collapse. */
+/** Exact repeats are shape; items equal only once trimmed are the domain's to collapse. */
 const gear = z.array(z.string()).refine(noRepeats((item: string) => item), 'must not repeat an item')
 
 /** `uniqueItems: true` for the hidden set too; which names may be hidden is §4's. */

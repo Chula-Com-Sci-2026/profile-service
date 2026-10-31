@@ -164,22 +164,22 @@ describe('PUT /v1/profiles/{userId} — createProfile', () => {
     expect(body['areaCell']).toEqual({ latitude: 14, longitude: 100 })
   })
 
-  it('400 when the area is missing — it is required', async () => {
-    await expectContract('createProfile', 400, await put(NOK, { displayName: 'Nok', birthYear: 1994 }))
+  it('422 when the area is missing — it is required', async () => {
+    await expectContract('createProfile', 422, await put(NOK, { displayName: 'Nok', birthYear: 1994 }))
   })
 
-  it('400 when a coordinate is a string, not a number', async () => {
+  it('422 when a coordinate is a string, not a number', async () => {
     const area = { latitude: '13.7314', longitude: 100.5414 }
-    await expectContract('createProfile', 400, await put(NOK, { ...minimal, area }))
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, area }))
   })
 
-  it('400 when the area carries a key the contract does not', async () => {
+  it('422 when the area carries a key the contract does not', async () => {
     const area = { ...minimal.area, altitude: 2 }
-    await expectContract('createProfile', 400, await put(NOK, { ...minimal, area }))
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, area }))
   })
 
-  it('400 when the body tries to write the cell — it is derived', async () => {
-    await expectContract('createProfile', 400, await put(NOK, { ...minimal, areaCell: minimalCell }))
+  it('422 when the body tries to write the cell — it is derived', async () => {
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, areaCell: minimalCell }))
   })
 
   it('422 when a coordinate is off the map', async () => {
@@ -187,18 +187,46 @@ describe('PUT /v1/profiles/{userId} — createProfile', () => {
     await expectContract('createProfile', 422, await put(NOK, { ...minimal, area }))
   })
 
-  it('400 when the body has an unknown field', async () => {
-    await expectContract('createProfile', 400, await put(NOK, { ...minimal, nickname: 'Nok' }))
+  it('422 when the body has an unknown field', async () => {
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, nickname: 'Nok' }))
   })
 
-  it('400 when the body is not valid JSON', async () => {
+  it.each([
+    ['not JSON', '{ not json'],
+    ['JSON null', 'null'],
+    ['a JSON array', '[]'],
+  ])('422 naming no field when the body is %s', async (_, raw) => {
     const token = await identity.tokenFor(NOK)
     const response = await app.request(`/v1/profiles/${NOK}`, {
       method: 'PUT',
-      body: '{ not json',
+      body: raw,
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     })
-    await expectContract('createProfile', 400, response)
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('createProfile', 422, response)
+    expect('fieldErrors' in body).toBe(false)
+  })
+
+  it('422 names every malformed field at once, each by its top-level name', async () => {
+    const response = await put(NOK, { displayName: 5, area: { latitude: '13.7', longitude: 100.5 }, gear: ['a', 'a'], nickname: 'Nok' })
+    const body = (await response.clone().json()) as { fieldErrors?: Record<string, string> }
+    await expectContract('createProfile', 422, response)
+    expect(Object.keys(body.fieldErrors ?? {}).sort()).toEqual(['area', 'displayName', 'gear', 'nickname'])
+  })
+
+  it('422 names the field whose §4 rule broke', async () => {
+    const response = await put(NOK, { ...minimal, birthYear: 1899 })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('createProfile', 422, response)
+    expect(body).toMatchObject({ code: 'validation_failed', fieldErrors: { birthYear: expect.any(String) } })
+  })
+
+  it('an error body carries the request\u2019s correlation id', async () => {
+    const id = 'abcdef01-2345-4678-89ab-cdef01234567'
+    const response = await app.request(`/v1/profiles/${NOK}`, { headers: { 'x-correlation-id': id } })
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('getProfile', 401, response)
+    expect(body).toMatchObject({ code: 'unauthorized', correlationId: id })
   })
 
   it('401 without a token', async () => {
@@ -363,29 +391,29 @@ describe('PATCH /v1/profiles/{userId} — updateProfile', () => {
     expect('birthYear' in body).toBe(false)
   })
 
-  it('400 when only half of the pace range is sent — it is replaced whole', async () => {
+  it('422 when only half of the pace range is sent — it is replaced whole', async () => {
     await givenAProfile(NOK, { ...minimal, paceRange: { fastest: 330, slowest: 390 } })
-    await expectContract('updateProfile', 400, await patch(NOK, { paceRange: { fastest: 300 } }))
+    await expectContract('updateProfile', 422, await patch(NOK, { paceRange: { fastest: 300 } }))
   })
 
-  it('400 when the area is sent as null — it cannot be cleared', async () => {
+  it('422 when the area is sent as null — it cannot be cleared', async () => {
     await givenAProfile()
-    await expectContract('updateProfile', 400, await patch(NOK, { area: null }))
+    await expectContract('updateProfile', 422, await patch(NOK, { area: null }))
   })
 
-  it('400 when only half of the area is sent — it is replaced whole', async () => {
+  it('422 when only half of the area is sent — it is replaced whole', async () => {
     await givenAProfile()
-    await expectContract('updateProfile', 400, await patch(NOK, { area: { latitude: 13.8 } }))
+    await expectContract('updateProfile', 422, await patch(NOK, { area: { latitude: 13.8 } }))
   })
 
-  it('400 when the body has an unknown field', async () => {
+  it('422 when the body has an unknown field', async () => {
     await givenAProfile()
-    await expectContract('updateProfile', 400, await patch(NOK, { nickname: 'Nok' }))
+    await expectContract('updateProfile', 422, await patch(NOK, { nickname: 'Nok' }))
   })
 
-  it('400 when a field that cannot be cleared is sent as null', async () => {
+  it('422 when a field that cannot be cleared is sent as null', async () => {
     await givenAProfile()
-    await expectContract('updateProfile', 400, await patch(NOK, { displayName: null }))
+    await expectContract('updateProfile', 422, await patch(NOK, { displayName: null }))
   })
 
   it('401 without a token', async () => {
@@ -560,8 +588,9 @@ describe('an unexpected failure', () => {
     const payload = (await response.clone().json()) as Record<string, unknown>
 
     await expectContract(operationId, 500, response)
-    // A 500 deliberately says nothing useful — no detail, and never the cause.
-    expect(payload['detail']).toBeUndefined()
+    // A 500 deliberately says nothing useful — never the cause.
+    expect(payload['code']).toBe('internal_error')
+    expect('fieldErrors' in payload).toBe(false)
     expect(JSON.stringify(payload)).not.toContain('pool is on fire')
   })
 })
@@ -675,13 +704,13 @@ describe('field visibility — FR-2.8', () => {
     expect(last?.type === 'updated' && last.profile.hiddenFields).toEqual(['bio'])
   })
 
-  it('400 when a hidden field repeats', async () => {
-    await expectContract('createProfile', 400, await put(NOK, { ...minimal, hiddenFields: ['bio', 'bio'] }))
+  it('422 when a hidden field repeats', async () => {
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, hiddenFields: ['bio', 'bio'] }))
   })
 
-  it('400 when the hidden set is sent as null — a set is replaced, never cleared', async () => {
+  it('422 when the hidden set is sent as null — a set is replaced, never cleared', async () => {
     await givenAProfile()
-    await expectContract('updateProfile', 400, await patch(NOK, { hiddenFields: null }))
+    await expectContract('updateProfile', 422, await patch(NOK, { hiddenFields: null }))
   })
 
   it('422 when asked to hide a field that is always shown', async () => {
@@ -690,9 +719,9 @@ describe('field visibility — FR-2.8', () => {
 })
 
 describe('sets are sets', () => {
-  it('400 rather than silently deduplicating what the client sent', async () => {
+  it('422 rather than silently deduplicating what the client sent', async () => {
     const response = await put(NOK, { ...minimal, gear: ['Pegasus 41', 'Pegasus 41'] })
-    await expectContract('createProfile', 400, response)
+    await expectContract('createProfile', 422, response)
   })
 
   it('201 for gear that differs only by surrounding spaces — the domain collapses it, the edge does not refuse it', async () => {
@@ -703,22 +732,24 @@ describe('sets are sets', () => {
     expect(body['gear']).toEqual(['Pegasus 41'])
   })
 
-  it('400 for a repeated day and time', async () => {
+  it('422 for a repeated day and time', async () => {
     const repeated = [
       { dayOfWeek: 'mon', timeOfDay: 'evening' },
       { dayOfWeek: 'mon', timeOfDay: 'evening' },
     ]
-    await expectContract('createProfile', 400, await put(NOK, { ...minimal, preferredRunTimes: repeated }))
+    await expectContract('createProfile', 422, await put(NOK, { ...minimal, preferredRunTimes: repeated }))
   })
 })
 
 describe('an unmatched path', () => {
-  it('answers in problem+json like every other error', async () => {
+  it('answers in the same ApiError shape as every other error', async () => {
     const response = await as(NOK, '/v1/profiles')
+    const body: unknown = await response.json()
     expect(response.status).toBe(404)
     expect(response.headers.get('x-correlation-id')).toMatch(UUID)
-    expect(response.headers.get('content-type')).toContain('application/problem+json')
-    expect(await response.json()).toEqual({ title: 'Not found', status: 404 })
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expectSchema('ApiError', body)
+    expect(body).toMatchObject({ code: 'not_found', correlationId: response.headers.get('x-correlation-id') })
   })
 })
 
@@ -743,14 +774,14 @@ describe('a SyntaxError from below the route', () => {
     await expectContract('getProfile', 500, response)
   })
 
-  it('still answers 400 when the body really is not JSON', async () => {
+  it('still answers 422 when the body really is not JSON', async () => {
     const token = await identity.tokenFor(NOK)
     const response = await app.request(`/v1/profiles/${NOK}`, {
       method: 'PUT',
       body: '{ not json',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     })
-    await expectContract('createProfile', 400, response)
+    await expectContract('createProfile', 422, response)
   })
 })
 
@@ -874,7 +905,11 @@ describe('the documentation', () => {
     const missing = new Hono<Env>()
     missing.onError(errorHandler(pino({ level: 'silent' })))
     missing.get('/openapi.yaml', contractDocument('/no/such/openapi.yaml'))
-    await expectContract('contract', 500, await missing.request('/openapi.yaml'))
+    const response = await missing.request('/openapi.yaml')
+    const body = (await response.clone().json()) as Record<string, unknown>
+    await expectContract('contract', 500, response)
+    // The request context never ran here, and the error still has an id — the same in both places.
+    expect(body['correlationId']).toBe(response.headers.get('x-correlation-id'))
   })
 
   it('serves the document this service was actually built from', async () => {
