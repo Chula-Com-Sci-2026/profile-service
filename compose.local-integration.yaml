@@ -1,0 +1,163 @@
+# Profile, for the team's local-integration stack.
+#
+# Copy this file next to local-integration's compose file and bring both up together:
+#
+#     docker compose -f <local-integration's compose file> -f compose.local-integration.yaml up --build
+#
+# It brings everything Profile needs that local-integration does not already have: its own
+# PostgreSQL (so it cannot collide with anyone else's tables), MinIO for photos and the bucket,
+# Profile's own broker user on the team's RabbitMQ, the one-shot migration, and the service,
+# built from a checkout of this repository. Every service here is named `profile-…`, so none can
+# collide with a service of the team's. It runs on the project's default network.
+#
+# ── Fill these in ─────────────────────────────────────────────────────────────────────────────
+# The values below are the ones this file cannot know. Each is set once, here, and used where it
+# is needed below.
+#
+#   service-name           the name the gateway and Buddy Discovery dial for Profile
+#   port                   the port they dial it on
+#   broker-host            the RabbitMQ service in local-integration
+#   broker-admin-user,     a login that may create users on that broker, through its management
+#   broker-admin-password  API (port 15672) — used once, to create Profile's own user
+#   access-token-secret    Identity's ACCESS_TOKEN_SECRET, so its tokens verify here
+#   checkout               the path to a checkout of profile-service, relative to this file
+x-profile:
+  service-name: &service-name profile-service
+  port: &port "3000"
+  broker-host: &broker-host rabbitmq
+  broker-admin-user: &broker-admin-user guest
+  broker-admin-password: &broker-admin-password guest
+  access-token-secret: &access-token-secret replace-with-local-access-signing-secret
+  checkout: &checkout .
+
+services:
+  # Profile's own database: nothing else reads it, and the service waits on it.
+  profile-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: profile
+      POSTGRES_PASSWORD: profile
+      POSTGRES_DB: profile
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U profile -d profile"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # Photos. The API is published on 127.0.0.1 only — local-integration keeps service ports off
+  # the network (ADR-0022) — because a photo's address is loaded by the browser, from the host.
+  # MinIO's default CORS answers any origin and allows PUT, which the presigned upload needs; an
+  # <img> needs no CORS at all.
+  profile-minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "127.0.0.1:9000:9000"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # The bucket, readable by anyone object by object and never listable: a photo is a picture a
+  # runner chose to show, and its key carries a uuid, so its address cannot be guessed.
+  profile-create-bucket:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      profile-minio:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cat > /tmp/public-read.json <<'JSON'
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "AWS": ["*"] },
+              "Action": ["s3:GetObject"],
+              "Resource": ["arn:aws:s3:::profile-service/*"]
+            }
+          ]
+        }
+        JSON
+        mc alias set store http://profile-minio:9000 minioadmin minioadmin
+        mc mb --ignore-existing store/profile-service
+        mc anonymous set-json /tmp/public-read.json store/profile-service
+
+  # Profile's own broker user, `profile`, with the least it needs: configure and write on
+  # `cra.events` only, read on nothing. Configure, because Profile declares the exchange itself on
+  # every connect; write, because it publishes there. It asks the broker's management API until it
+  # answers rather than waiting on the broker's service, whose name is one of the values above.
+  # `$$` because compose interpolates `$`.
+  profile-create-broker-user:
+    image: rabbitmq:4.3.6-management
+    restart: "no"
+    environment:
+      BROKER_HOST: *broker-host
+      BROKER_ADMIN_USER: *broker-admin-user
+      BROKER_ADMIN_PASSWORD: *broker-admin-password
+    entrypoint:
+      - sh
+      - -c
+      - |
+        admin="rabbitmqadmin --host $$BROKER_HOST --username $$BROKER_ADMIN_USER --password $$BROKER_ADMIN_PASSWORD"
+        tries=0
+        until $$admin show overview > /dev/null 2>&1; do
+          tries=$$((tries + 1))
+          if [ "$$tries" -ge 120 ]; then echo "the broker's management API never answered" >&2; exit 1; fi
+          sleep 1
+        done
+        $$admin declare user --name profile --password profile --tags ''
+        $$admin declare permissions --vhost / --username profile --configure '^cra\.events$$' --write '^cra\.events$$' --read '^$$'
+
+  # The same image as the service, run once: migrations never run on the service's boot.
+  profile-migrate:
+    image: profile-service:local
+    build:
+      context: *checkout
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://profile:profile@profile-postgres:5432/profile
+    depends_on:
+      profile-postgres:
+        condition: service_healthy
+
+  # Profile. It waits on its database and its migration and on nothing else: MinIO down costs only
+  # photos, and RabbitMQ down costs only delivery — the events wait in the outbox until it is
+  # back. Its port stays internal; the gateway and Buddy Discovery reach it by name.
+  profile-service:
+    image: profile-service:local
+    build:
+      context: *checkout
+    networks:
+      default:
+        aliases: [*service-name]
+    environment:
+      PORT: *port
+      DATABASE_URL: postgres://profile:profile@profile-postgres:5432/profile
+      ACCESS_TOKEN_SECRET: *access-token-secret
+      LOG_LEVEL: info
+      SHUTDOWN_DRAIN_MS: "3000"
+      OBJECT_STORAGE_ENDPOINT: http://profile-minio:9000
+      # Never `localhost`, which a browser may try as IPv6 first: MinIO listens on 127.0.0.1 only.
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+      OBJECT_STORAGE_BUCKET: profile-service
+      OBJECT_STORAGE_ACCESS_KEY: minioadmin
+      OBJECT_STORAGE_SECRET_KEY: minioadmin
+      EVENT_SENDER: rabbitmq
+      RABBITMQ_HOST: *broker-host
+      RABBITMQ_USER: profile
+      RABBITMQ_PASSWORD: profile
+    # Must exceed SHUTDOWN_DRAIN_MS plus the ten-second close deadline.
+    stop_grace_period: 20s
+    depends_on:
+      profile-postgres:
+        condition: service_healthy
+      profile-migrate:
+        condition: service_completed_successfully
