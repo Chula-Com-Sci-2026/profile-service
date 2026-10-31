@@ -1,14 +1,22 @@
 # Profile, for the team's local-integration stack.
 #
-# Copy this file next to local-integration's compose file and bring both up together:
-#
-#     docker compose -f <local-integration's compose file> -f compose.local-integration.yaml up --build
-#
 # It brings everything Profile needs that local-integration does not already have: its own
 # PostgreSQL (so it cannot collide with anyone else's tables), MinIO for photos and the bucket,
 # Profile's own broker user on the team's RabbitMQ, the one-shot migration, and the service,
-# built from a checkout of this repository. Every service here is named `profile-…`, so none can
-# collide with a service of the team's. It runs on the project's default network.
+# built from a checkout of this repository. It runs on the project's default network.
+#
+# ── First, remove local-integration's own Profile service ─────────────────────────────────────
+# This service takes the place of the Python Profile, so delete that service from
+# local-integration's compose file (or comment it out) before bringing this one up. Left in, it
+# does not simply run beside this one:
+#   - If it is also called `profile-service`, compose merges the two into one service: this
+#     one inherits its depends_on, its published ports and its environment variables.
+#   - If it has another name and `service-name` below is set to that name, both containers
+#     answer to it, and requests split between them.
+#
+# Then copy this file next to local-integration's compose file and bring both up together:
+#
+#     docker compose -f <local-integration's compose file> -f compose.local-integration.yaml up --build
 #
 # ── Fill these in ─────────────────────────────────────────────────────────────────────────────
 # The values below are the ones this file cannot know. Each is set once, here, and used where it
