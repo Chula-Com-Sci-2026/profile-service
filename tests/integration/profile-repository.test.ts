@@ -2,8 +2,8 @@ import { sql } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest'
-import { InvalidProfileFieldError, ProfileAlreadyExistsError } from '../../src/domain/errors.ts'
-import { Profile } from '../../src/domain/profile.ts'
+import { ConcurrentChangeError, InvalidProfileFieldError, ProfileAlreadyExistsError } from '../../src/domain/errors.ts'
+import { Profile, type ProfileContent } from '../../src/domain/profile.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
 import { CorruptProfileRowError } from '../../src/infrastructure/profile-mapper.ts'
 
@@ -45,6 +45,7 @@ function aFullProfile(): Profile {
     gear: ['Pegasus 41', 'Forerunner 265'],
     photoRef: PHOTO,
     hiddenFields: ['gear', 'bio'],
+    revision: 1,
   })
 }
 
@@ -73,6 +74,7 @@ async function insertRow(column: string, value: string): Promise<void> {
     latitude: '13.73',
     longitude: '100.54',
     availability: `'Nights'`,
+    revision: '1',
     [column]: value,
   }
   await db.execute(sql.raw(`INSERT INTO profiles (${Object.keys(row).join(', ')}) VALUES (${Object.values(row).join(', ')})`))
@@ -150,7 +152,7 @@ describe('insert — one profile per runner (§5)', () => {
 })
 
 describe('update', () => {
-  it('persists the change and reports that a row moved', async () => {
+  it('persists the change', async () => {
     await repository.insert(aFullProfile())
     const changed = aFullProfile().save({
       name: 'Ray A.',
@@ -164,15 +166,58 @@ describe('update', () => {
       gear: null,
     })
 
-    expect(await repository.update(changed)).toBe(true)
+    await repository.update(changed)
     const found = await repository.findById(RAY)
     expect(found?.name).toBe('Ray A.')
     expect(found?.bio).toBeNull()
     expect(found?.gear).toBeNull()
   })
 
-  it('reports that nothing moved when there is no such profile', async () => {
-    expect(await repository.update(aMinimalProfile())).toBe(false)
+})
+
+/** A profile's own answers, as a save would carry them. */
+function contentOf(profile: Profile): ProfileContent {
+  const { name, bio, paceMin, paceMax, experience, area, latitude, longitude, availability } = profile
+  return { name, bio, paceMin, paceMax, experience, area, latitude, longitude, availability }
+}
+
+describe('revision — §5: a change is written only over the revision it was made from', () => {
+  it('stores the revision with the profile', async () => {
+    await repository.insert(aMinimalProfile())
+    expect((await repository.findById(BEAM))?.revision).toBe(1)
+    const result = await db.execute(sql`SELECT revision FROM profiles WHERE id = ${BEAM}`)
+    expect(result.rows[0]?.['revision']).toBe(1)
+  })
+
+  it('writes a change made from the stored revision, and stores its revision', async () => {
+    const created = aMinimalProfile()
+    await repository.insert(created)
+    await repository.update(created.setFieldVisibility(['bio']))
+    expect(await repository.findById(BEAM)).toMatchObject({ revision: 2, hiddenFields: ['bio'] })
+  })
+
+  it('raises ConcurrentChangeError for a change made from a revision that has moved on, keeping the one written first', async () => {
+    const read = aMinimalProfile()
+    await repository.insert(read)
+    await repository.update(read.save({ ...contentOf(read), name: 'First' }))
+    await expect(repository.update(read.setFieldVisibility(['gear']))).rejects.toThrow(ConcurrentChangeError)
+    expect(await repository.findById(BEAM)).toMatchObject({ name: 'First', hiddenFields: [], revision: 2 })
+  })
+
+  it('raises ConcurrentChangeError, naming the runner, when there is no such profile', async () => {
+    await expect(repository.update(aMinimalProfile())).rejects.toMatchObject({ name: 'ConcurrentChangeError', id: BEAM })
+  })
+})
+
+describe('findAll', () => {
+  it('returns every stored profile, ordered by id', async () => {
+    await repository.insert(aMinimalProfile())
+    await repository.insert(aFullProfile())
+    expect((await repository.findAll()).map((profile) => profile.id)).toEqual([RAY, BEAM])
+  })
+
+  it('returns an empty list when there is none', async () => {
+    expect(await repository.findAll()).toEqual([])
   })
 })
 
@@ -195,6 +240,7 @@ describe('row to domain is a boundary', () => {
     ['pace_min', `0`, 'a pace of zero'],
     ['pace_min', `7`, 'a paceMin slower than paceMax'],
     ['latitude', `91`, 'a point off the map'],
+    ['revision', `0`, 'a revision of zero'],
   ])('rejects %s = %s — %s', async (column, value) => {
     await insertRow(column, value)
     await expect(repository.findById(RAY)).rejects.toThrow(CorruptProfileRowError)

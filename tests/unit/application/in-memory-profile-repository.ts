@@ -1,4 +1,4 @@
-import { ProfileAlreadyExistsError } from '../../../src/domain/errors.ts'
+import { ConcurrentChangeError, ProfileAlreadyExistsError } from '../../../src/domain/errors.ts'
 import type { Profile } from '../../../src/domain/profile.ts'
 import type { ProfileRepository } from '../../../src/domain/profile-repository.ts'
 
@@ -15,15 +15,19 @@ export class InMemoryProfileRepository implements ProfileRepository {
     return this.#profiles.get(id) ?? null
   }
 
+  async findAll(): Promise<readonly Profile[]> {
+    return [...this.#profiles.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  }
+
   async insert(profile: Profile): Promise<void> {
     if (this.#profiles.has(profile.id)) throw new ProfileAlreadyExistsError(profile.id)
     this.#profiles.set(profile.id, profile)
   }
 
-  async update(profile: Profile): Promise<boolean> {
-    if (!this.#profiles.has(profile.id)) return false
+  /** Written only over the revision the change was made from, as the Drizzle one does (§5). */
+  async update(profile: Profile): Promise<void> {
+    if (this.#profiles.get(profile.id)?.revision !== profile.revision - 1) throw new ConcurrentChangeError(profile.id)
     this.#profiles.set(profile.id, profile)
-    return true
   }
 
   /** Test seam: put a profile in place without going through insert. */

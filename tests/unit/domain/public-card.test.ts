@@ -23,6 +23,7 @@ function everything(overrides: Partial<ProfileFields> = {}): Profile {
     gear: ['Pegasus 41'],
     photoRef: PHOTO,
     hiddenFields: [],
+    revision: 1,
     ...overrides,
   })
 }
@@ -131,10 +132,10 @@ describe('Profile.setFieldVisibility — domain.md §3 setFieldVisibility()', ()
     expect(everything({ hiddenFields: ['bio', 'pace'] }).setFieldVisibility([]).hiddenFields).toEqual([])
   })
 
-  it('changes nothing else, and returns a new frozen profile', () => {
+  it('changes nothing else but the revision, and returns a new frozen profile', () => {
     const before = everything()
     const after = before.setFieldVisibility(['gear'])
-    expect({ ...after, hiddenFields: [] }).toEqual({ ...before, hiddenFields: [] })
+    expect({ ...after, hiddenFields: [], revision: 0 }).toEqual({ ...before, hiddenFields: [], revision: 0 })
     expect(after).not.toBe(before)
     expect(Object.isFrozen(after)).toBe(true)
   })

@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { ProfileAlreadyExistsError } from '../domain/errors.ts'
+import { ConcurrentChangeError, ProfileAlreadyExistsError } from '../domain/errors.ts'
 import { isId } from '../domain/id.ts'
 import type { Profile } from '../domain/profile.ts'
 import type { ProfileRepository } from '../domain/profile-repository.ts'
@@ -77,6 +77,11 @@ export class DrizzleProfileRepository implements ProfileRepository {
     return row === undefined ? null : toDomain(row)
   }
 
+  async findAll(): Promise<readonly Profile[]> {
+    const rows = await this.#db.select().from(profiles).orderBy(profiles.id)
+    return rows.map(toDomain)
+  }
+
   async insert(profile: Profile): Promise<void> {
     try {
       await this.#db.insert(profiles).values(toRow(profile))
@@ -86,15 +91,22 @@ export class DrizzleProfileRepository implements ProfileRepository {
     }
   }
 
-  async update(profile: Profile): Promise<boolean> {
+  /**
+   * §5: a change is written only over the revision it was made from, the one before its own. No
+   * row matching means another change was saved first — or the profile is gone — and the caller
+   * makes its change again on what is there now.
+   */
+  async update(profile: Profile): Promise<void> {
+    let moved: number
     try {
       const result = await this.#db
         .update(profiles)
         .set(toRow(profile))
-        .where(eq(profiles.id, profile.id))
-      return (result.rowCount ?? 0) > 0
+        .where(and(eq(profiles.id, profile.id), eq(profiles.revision, profile.revision - 1)))
+      moved = result.rowCount ?? 0
     } catch (error) {
       throw new ProfileWriteFailedError(error)
     }
+    if (moved === 0) throw new ConcurrentChangeError(profile.id)
   }
 }

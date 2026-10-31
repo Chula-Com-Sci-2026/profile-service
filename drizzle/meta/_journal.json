@@ -43,6 +43,13 @@
       "when": 1793469849213,
       "tag": "0005_one_name_everywhere",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793473783642,
+      "tag": "0006_profile_revision",
+      "breakpoints": true
     }
   ]
 }

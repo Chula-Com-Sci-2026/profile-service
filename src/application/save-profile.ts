@@ -1,4 +1,4 @@
-import { ProfileAlreadyExistsError, ProfileNotFoundError } from '../domain/errors.ts'
+import { ProfileAlreadyExistsError } from '../domain/errors.ts'
 import { Profile, type ProfileContent } from '../domain/profile.ts'
 import type { ProfileRepository } from '../domain/profile-repository.ts'
 import type { Publishing } from './publishing.ts'
@@ -27,8 +27,7 @@ export function saveProfile(repository: ProfileRepository, publishing: Publishin
       return created
     }
     const saved = current.save(content)
-    // Nothing deletes a profile, so a read profile that has gone by the write is a broken store.
-    if (!(await repository.update(saved))) throw new ProfileNotFoundError(id)
+    await repository.update(saved)
     return saved
   }
 

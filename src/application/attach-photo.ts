@@ -34,7 +34,7 @@ export function attachPhoto(
     })
     if (!held) throw new InvalidProfileFieldError('photoRef', 'must name a photo uploaded for this runner')
 
-    if (!(await repository.update(attached))) throw new ProfileNotFoundError(id)
+    await repository.update(attached)
     await publishing.events.updated(attached).catch((error: unknown) => publishing.onUndelivered(id, error))
 
     const displaced = current.photoRef

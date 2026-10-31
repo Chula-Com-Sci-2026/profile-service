@@ -41,6 +41,7 @@ export function aProfile(overrides: Partial<ProfileFields> = {}): Profile {
     gear: created.gear,
     photoRef: created.photoRef,
     hiddenFields: created.hiddenFields,
+    revision: created.revision,
     ...overrides,
   })
 }

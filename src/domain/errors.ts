@@ -35,6 +35,21 @@ export class ProfileAlreadyExistsError extends Error {
   }
 }
 
+/**
+ * A profile's revision rises by one with every change — domain.md §5. Raised by a write made from a
+ * revision that is no longer the stored one: another change was saved first, or the profile is gone.
+ * Never by a read. The change can be made again on what is there now.
+ */
+export class ConcurrentChangeError extends Error {
+  readonly id: string
+
+  constructor(id: string) {
+    super(`a change to the profile for ${id} was saved first`)
+    this.name = 'ConcurrentChangeError'
+    this.id = id
+  }
+}
+
 /** Throws InvalidProfileFieldError unless the rule holds. */
 export function ensure(held: boolean, field: string, rule: string): void {
   if (!held) throw new InvalidProfileFieldError(field, rule)

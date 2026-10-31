@@ -17,7 +17,7 @@ export function setFieldVisibility(repository: ProfileRepository, publishing: Pu
     if (current === null) throw new ProfileNotFoundError(id)
 
     const changed = current.setFieldVisibility(hiddenFields)
-    if (!(await repository.update(changed))) throw new ProfileNotFoundError(id)
+    await repository.update(changed)
 
     await publishing.events.updated(changed).catch((error: unknown) => publishing.onUndelivered(id, error))
     return changed

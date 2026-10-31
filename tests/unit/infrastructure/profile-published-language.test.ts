@@ -37,6 +37,7 @@ const minimalFields: ProfileFields = {
   gear: null,
   photoRef: null,
   hiddenFields: [],
+  revision: 1,
 }
 const minimal = new Profile(minimalFields)
 const everything = new Profile({

@@ -22,7 +22,7 @@ export function removePhoto(
     if (current === null) throw new ProfileNotFoundError(id)
 
     const removed = current.removePhoto()
-    if (!(await repository.update(removed))) throw new ProfileNotFoundError(id)
+    await repository.update(removed)
     await publishing.events.updated(removed).catch((error: unknown) => publishing.onUndelivered(id, error))
 
     if (current.photoRef !== null) {

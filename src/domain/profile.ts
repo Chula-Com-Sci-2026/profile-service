@@ -26,6 +26,8 @@ export type ProfileFields = {
   gear: readonly string[] | null
   photoRef: string | null
   hiddenFields: readonly HiddenField[]
+  /** domain.md §4 and §5: 1 when the profile is created, one more with every change. Never a runner's to write. */
+  revision: number
 }
 
 /**
@@ -111,6 +113,7 @@ export class Profile {
   readonly gear: readonly string[] | null
   readonly photoRef: string | null
   readonly hiddenFields: readonly HiddenField[]
+  readonly revision: number
 
   /** Enforces every §4 rule, in the order of domain.md's table, and reports the first one broken. */
   constructor(fields: ProfileFields) {
@@ -139,6 +142,8 @@ export class Profile {
     for (const field of fields.hiddenFields) {
       ensure(isHiddenField(field), 'hiddenFields', `must hold only ${HIDEABLE_FIELDS.join(', ')}`)
     }
+    // NaN and the infinities are not integers, so this is the whole check.
+    ensure(Number.isInteger(fields.revision) && fields.revision >= 1, 'revision', 'must be a whole number, 1 or more')
 
     this.id = fields.id
     this.name = name
@@ -155,11 +160,12 @@ export class Profile {
     this.photoRef = fields.photoRef
     // A set in declared order: filtering the declared list both deduplicates and sorts.
     this.hiddenFields = Object.freeze(HIDEABLE_FIELDS.filter((field) => fields.hiddenFields.includes(field)))
+    this.revision = fields.revision
 
     Object.freeze(this)
   }
 
-  /** The first save — `saveProfile()` on a runner with no profile: nothing hidden, no photo. */
+  /** The first save — `saveProfile()` on a runner with no profile: nothing hidden, no photo, revision 1. */
   static create(id: string, content: ProfileContent): Profile {
     return new Profile({
       id,
@@ -168,6 +174,7 @@ export class Profile {
       gear: content.gear ?? null,
       photoRef: null,
       hiddenFields: [],
+      revision: 1,
     })
   }
 
@@ -178,7 +185,7 @@ export class Profile {
    */
   save(content: ProfileContent): Profile {
     return new Profile({
-      ...this.#fields(),
+      ...this.#next(),
       ...Profile.#answers(content),
       ...(content.usualDistance !== undefined && { usualDistance: content.usualDistance }),
       ...(content.gear !== undefined && { gear: content.gear }),
@@ -190,7 +197,7 @@ export class Profile {
    * whole and changes nothing else; §4's rule on which names may be hidden is the constructor's.
    */
   setFieldVisibility(hiddenFields: readonly HiddenField[]): Profile {
-    return new Profile({ ...this.#fields(), hiddenFields })
+    return new Profile({ ...this.#next(), hiddenFields })
   }
 
   /**
@@ -199,12 +206,12 @@ export class Profile {
    * the use case asks before it gets here.
    */
   attachPhoto(photoRef: string): Profile {
-    return new Profile({ ...this.#fields(), photoRef })
+    return new Profile({ ...this.#next(), photoRef })
   }
 
   /** Takes the photo off the profile — domain.md §3 `removePhoto()`. */
   removePhoto(): Profile {
-    return new Profile({ ...this.#fields(), photoRef: null })
+    return new Profile({ ...this.#next(), photoRef: null })
   }
 
   /** The point as other runners see it — domain.md §4 "Area cells". Worked out, never stored. */
@@ -249,7 +256,7 @@ export class Profile {
     }
   }
 
-  /** This profile as the fields it was built from — the starting point of every change. */
+  /** This profile as the fields it was built from. */
   #fields(): ProfileFields {
     return {
       id: this.id,
@@ -266,6 +273,15 @@ export class Profile {
       gear: this.gear,
       photoRef: this.photoRef,
       hiddenFields: this.hiddenFields,
+      revision: this.revision,
     }
+  }
+
+  /**
+   * The starting point of every change: this profile's fields, one revision on — domain.md §5. A
+   * change that leaves every field as it was is still a change, so it still moves the revision.
+   */
+  #next(): ProfileFields {
+    return { ...this.#fields(), revision: this.revision + 1 }
   }
 }

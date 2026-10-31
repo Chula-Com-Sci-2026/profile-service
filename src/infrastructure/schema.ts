@@ -1,4 +1,4 @@
-import { doublePrecision, jsonb, pgTable, text, uuid } from 'drizzle-orm/pg-core'
+import { doublePrecision, integer, jsonb, pgTable, text, uuid } from 'drizzle-orm/pg-core'
 
 /**
  * One table, one row per profile — domain.md §3's aggregate, stored as one unit.
@@ -25,6 +25,8 @@ export const profiles = pgTable('profiles', {
   gear: jsonb('gear').$type<string[]>(),
   photoRef: text('photo_ref'),
   hiddenFields: jsonb('hidden_fields').$type<string[]>().notNull().default([]),
+  // domain.md §5: rises by one with every change, and a write is conditional on it.
+  revision: integer('revision').notNull(),
 })
 
 export type ProfileRow = typeof profiles.$inferSelect

@@ -58,6 +58,7 @@ describe('saveProfile — creating or replacing', () => {
         }
         return repository.findById(id)
       },
+      findAll: () => repository.findAll(),
       insert: (profile) => repository.insert(profile),
       update: (profile) => repository.update(profile),
     }

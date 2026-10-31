@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { InvalidProfileFieldError } from '../../../src/domain/errors.ts'
 import type { HiddenField } from '../../../src/domain/hidden-field.ts'
-import { Profile, type ProfileFields } from '../../../src/domain/profile.ts'
+import { Profile, type ProfileContent, type ProfileFields } from '../../../src/domain/profile.ts'
 
 const RAY = '11111111-1111-4111-8111-111111111111'
+const PHOTO = `photos/${RAY}/0b5f3c1e-7d2a-4e9b-8f61-2c4d6e8a0b1c`
+
+/** What a save carries: Ray's answers, with overrides. */
+const content = (overrides: Partial<ProfileContent> = {}): ProfileContent => ({
+  name: 'Ray Attajak',
+  paceMin: 6,
+  paceMax: 6.5,
+  experience: 'Intermediate',
+  area: 'Lumphini area',
+  latitude: 13.7308,
+  longitude: 100.5418,
+  availability: 'Tue & Thu evenings',
+  ...overrides,
+})
 
 /** A profile carrying only what §3 requires; every optional field unset. Overrides add the rest. */
 function fields(overrides: Partial<ProfileFields> = {}): ProfileFields {
@@ -22,6 +36,7 @@ function fields(overrides: Partial<ProfileFields> = {}): ProfileFields {
     gear: null,
     photoRef: null,
     hiddenFields: [],
+    revision: 1,
     ...overrides,
   }
 }
@@ -238,5 +253,33 @@ describe('Profile — immutability', () => {
       // @ts-expect-error the hidden set is readonly
       profile.hiddenFields.push('gear'),
     ).toThrow(TypeError)
+  })
+})
+
+describe('Profile — revision (§4: a whole number, 1 or more; §5: it rises by one with every change)', () => {
+  it('starts at 1 when the profile is created', () => {
+    expect(Profile.create(RAY, content()).revision).toBe(1)
+  })
+
+  it.each([
+    ['save', (p: Profile) => p.save(content({ name: 'Ray A.' }))],
+    ['setFieldVisibility', (p: Profile) => p.setFieldVisibility(['bio'])],
+    ['attachPhoto', (p: Profile) => p.attachPhoto(PHOTO)],
+    ['removePhoto', (p: Profile) => p.removePhoto()],
+  ])('rises by one with %s', (_, change) => {
+    expect(change(aProfile({ revision: 4 })).revision).toBe(5)
+  })
+
+  it('rises even when the change leaves every field as it was', () => {
+    const profile = aProfile({ revision: 4 })
+    expect(profile.setFieldVisibility(profile.hiddenFields).revision).toBe(5)
+  })
+
+  it.each([0, -1, 1.5, Number.NaN])('refuses %s, on revision', (revision) => {
+    expect(refusedField({ revision })).toBe('revision')
+  })
+
+  it('is not on the public card — it travels with the event, never on HTTP', () => {
+    expect('revision' in aProfile().publicCard()).toBe(false)
   })
 })

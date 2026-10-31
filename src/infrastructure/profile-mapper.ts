@@ -62,6 +62,7 @@ export function toDomain(row: ProfileRow): Profile {
       gear: row.gear === null ? null : asTexts(row.gear, 'gear'),
       photoRef: row.photoRef,
       hiddenFields: asTexts(row.hiddenFields, 'hiddenFields').map(toHiddenField),
+      revision: row.revision,
     })
   } catch (error) {
     if (error instanceof InvalidProfileFieldError) throw new CorruptProfileRowError(row.id, error)
@@ -85,5 +86,6 @@ export function toRow(profile: Profile): ProfileInsert {
     gear: profile.gear === null ? null : [...profile.gear],
     photoRef: profile.photoRef,
     hiddenFields: [...profile.hiddenFields],
+    revision: profile.revision,
   }
 }

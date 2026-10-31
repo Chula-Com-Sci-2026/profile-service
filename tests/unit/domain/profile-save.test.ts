@@ -37,6 +37,7 @@ function aSavedProfile(): Profile {
     gear: ['Pegasus 41'],
     photoRef: PHOTO,
     hiddenFields: ['bio', 'gear'],
+    revision: 1,
   })
 }
 
@@ -147,11 +148,11 @@ describe('Profile.save — the result is a new, valid Profile', () => {
 describe('Profile.attachPhoto and removePhoto — domain.md §3', () => {
   const OTHER = `photos/${RAY}/9d3a7c5e-1b2f-4a6c-8e0d-3f5b7a9c1e2d`
 
-  it('attachPhoto puts the key on the profile and changes nothing else', () => {
+  it('attachPhoto puts the key on the profile and changes nothing else but the revision', () => {
     const before = aSavedProfile()
     const after = before.attachPhoto(OTHER)
     expect(after.photoRef).toBe(OTHER)
-    expect({ ...after, photoRef: null }).toEqual({ ...before, photoRef: null })
+    expect({ ...after, photoRef: null, revision: 0 }).toEqual({ ...before, photoRef: null, revision: 0 })
     expect(Object.isFrozen(after)).toBe(true)
   })
 
