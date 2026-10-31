@@ -22,14 +22,14 @@ const rejects = (): Promise<never> => Promise.reject(new Error('not called'))
 
 const app = createApp({
   useCases: {
-    createProfile: rejects,
+    saveProfile: rejects,
     getProfile: rejects,
-    updateProfile: rejects,
-    createAvatarUpload: rejects,
+    getPublicProfile: rejects,
   },
   logger: pino({ level: 'silent' }),
   authentication: { secret: 'secret', issuer: 'issuer', audience: 'audience' },
   readiness: { isDraining: () => false, canServe: () => Promise.resolve(true) },
+  photoUrl: (photoRef) => photoRef,
 })
 
 /**
@@ -42,7 +42,7 @@ const app = createApp({
  */
 const NOT_CONTRACT_OPERATIONS = ['GET /docs/{asset}']
 
-/** Hono writes parameters as `:userId`; the contract writes them as `{userId}`. */
+/** Hono writes parameters as `:id`; the contract writes them as `{id}`. */
 const served = new Set(
   app.routes
     .filter((route) => route.method !== 'ALL') // ALL is middleware, not an endpoint

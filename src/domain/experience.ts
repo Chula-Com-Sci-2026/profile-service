@@ -1,7 +1,7 @@
 import { InvalidProfileFieldError } from './errors.ts'
 
-/** How new or experienced a runner is — domain.md §4. */
-export const EXPERIENCES = ['beginner', 'intermediate', 'advanced'] as const
+/** How new or experienced a runner is — domain.md §4: the label the team frontend shows, in exactly this case. */
+export const EXPERIENCES = ['Beginner', 'Intermediate', 'Advanced'] as const
 
 export type Experience = (typeof EXPERIENCES)[number]
 

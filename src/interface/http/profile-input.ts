@@ -1,60 +1,30 @@
-import { Area } from '../../domain/area.ts'
 import { toExperience } from '../../domain/experience.ts'
-import { toGender } from '../../domain/gender.ts'
-import { toHiddenField } from '../../domain/hidden-field.ts'
-import { PaceRange } from '../../domain/pace-range.ts'
-import { PreferredRunTime } from '../../domain/preferred-run-time.ts'
-import type { ProfileChanges, ProfileFields } from '../../domain/profile.ts'
-import { UsualDistance } from '../../domain/usual-distance.ts'
-import type { ProfilePatchBody, ProfileWriteBody } from './validators.ts'
+import type { ProfileContent } from '../../domain/profile.ts'
+import { toUsualDistance } from '../../domain/usual-distance.ts'
+import type { ProfileSaveBody } from './validators.ts'
 
 /**
- * Validated body → domain types.
+ * Validated body → domain types. Nothing is renamed: the body's names are the domain's.
  *
- * Zod infers an optional field as `T | undefined`, which `exactOptionalPropertyTypes` refuses
- * to hand to the domain — so omit the key rather than forwarding an `undefined`. That is what
- * keeps "an unset scalar is absent" true past the edge.
+ * Zod infers an optional field as `T | undefined`, which `exactOptionalPropertyTypes` refuses to
+ * hand to the domain — so a key left out stays left out, rather than arriving as `undefined`. That
+ * keeps "left out" and "null" apart, which a save needs: our additions keep when left out and clear
+ * with null.
  */
-export function toFields(userId: string, body: ProfileWriteBody): ProfileFields {
+export function toContent(body: ProfileSaveBody): ProfileContent {
   return {
-    userId,
-    displayName: body.displayName,
-    area: new Area(body.area.latitude, body.area.longitude),
-    preferredRunTimes: (body.preferredRunTimes ?? []).map((t) => new PreferredRunTime(t.dayOfWeek, t.timeOfDay)),
-    gear: body.gear ?? [],
-    hiddenFields: (body.hiddenFields ?? []).map(toHiddenField),
+    name: body.name,
+    paceMin: body.paceMin,
+    paceMax: body.paceMax,
+    experience: toExperience(body.experience),
+    area: body.area,
+    latitude: body.latitude,
+    longitude: body.longitude,
+    availability: body.availability,
     ...(body.bio !== undefined && { bio: body.bio }),
-    ...(body.avatarRef !== undefined && { avatarRef: body.avatarRef }),
-    ...(body.birthYear !== undefined && { birthYear: body.birthYear }),
-    ...(body.gender !== undefined && { gender: toGender(body.gender) }),
-    ...(body.paceRange !== undefined && { paceRange: new PaceRange(body.paceRange.fastest, body.paceRange.slowest) }),
-    ...(body.usualDistance !== undefined && { usualDistance: new UsualDistance(body.usualDistance) }),
-    ...(body.experience !== undefined && { experience: toExperience(body.experience) }),
-  }
-}
-
-/** `null` survives the crossing — it is how the merge patch says "clear this". */
-export function toChanges(body: ProfilePatchBody): ProfileChanges {
-  return {
-    ...(body.displayName !== undefined && { displayName: body.displayName }),
-    ...(body.birthYear !== undefined && { birthYear: body.birthYear }),
-    ...(body.bio !== undefined && { bio: body.bio }),
-    ...(body.avatarRef !== undefined && { avatarRef: body.avatarRef }),
-    ...(body.gender !== undefined && { gender: body.gender === null ? null : toGender(body.gender) }),
-    ...(body.area !== undefined && { area: new Area(body.area.latitude, body.area.longitude) }),
-    ...(body.paceRange !== undefined && {
-      paceRange: body.paceRange === null ? null : new PaceRange(body.paceRange.fastest, body.paceRange.slowest),
-    }),
     ...(body.usualDistance !== undefined && {
-      usualDistance: body.usualDistance === null ? null : new UsualDistance(body.usualDistance),
-    }),
-    ...(body.experience !== undefined && {
-      experience: body.experience === null ? null : toExperience(body.experience),
-    }),
-    ...(body.preferredRunTimes !== undefined && {
-      preferredRunTimes: body.preferredRunTimes.map((t) => new PreferredRunTime(t.dayOfWeek, t.timeOfDay)),
+      usualDistance: body.usualDistance === null ? null : toUsualDistance(body.usualDistance),
     }),
     ...(body.gear !== undefined && { gear: body.gear }),
-    ...(body.hiddenFields !== undefined && { hiddenFields: body.hiddenFields.map(toHiddenField) }),
   }
 }

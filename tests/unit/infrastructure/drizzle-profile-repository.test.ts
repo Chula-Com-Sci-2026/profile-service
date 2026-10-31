@@ -2,7 +2,6 @@ import { drizzle } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
 import { stdSerializers } from 'pino'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { Area } from '../../../src/domain/area.ts'
 import { Profile } from '../../../src/domain/profile.ts'
 import { DrizzleProfileRepository } from '../../../src/infrastructure/drizzle-profile-repository.ts'
 
@@ -11,7 +10,7 @@ import { DrizzleProfileRepository } from '../../../src/infrastructure/drizzle-pr
  *
  * drizzle wraps every failed query with its parameters in the message, the stack and a `params`
  * property, and the error handler logs whatever reaches it — so an outage during a PUT would
- * write the runner's exact area to stdout. domain.md keeps that point inside this service.
+ * write the runner's exact point to stdout. domain.md keeps that point inside this service.
  */
 let repository: DrizzleProfileRepository
 
@@ -22,15 +21,16 @@ beforeAll(async () => {
   repository = new DrizzleProfileRepository(drizzle(pool))
 })
 
-const profile = new Profile({
-  userId: '7f3a9c2e15',
-  displayName: 'Nok',
-  birthYear: 1994,
+const profile = Profile.create('11111111-1111-4111-8111-111111111111', {
+  name: 'Ray Attajak',
   bio: 'Chasing a sub-2 half.',
-  area: new Area(13.731723456, 100.541532),
-  gear: [],
-  hiddenFields: [],
-  preferredRunTimes: [],
+  paceMin: 6,
+  paceMax: 6.5,
+  experience: 'Intermediate',
+  area: 'Lumphini area',
+  latitude: 13.731723456,
+  longitude: 100.541532,
+  availability: 'Tue & Thu evenings',
 })
 
 /** What pino writes for `{ err }`, cause chain included. */

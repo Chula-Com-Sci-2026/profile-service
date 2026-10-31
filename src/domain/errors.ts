@@ -15,23 +15,23 @@ export class InvalidProfileFieldError extends Error {
 
 /** No profile for that runner. A normal outcome of a query; policy turns it into an error. */
 export class ProfileNotFoundError extends Error {
-  readonly userId: string
+  readonly id: string
 
-  constructor(userId: string) {
-    super(`no profile for ${userId}`)
+  constructor(id: string) {
+    super(`no profile for ${id}`)
     this.name = 'ProfileNotFoundError'
-    this.userId = userId
+    this.id = id
   }
 }
 
 /** One profile per runner — domain.md §5. Raised by a write, never by a read. */
 export class ProfileAlreadyExistsError extends Error {
-  readonly userId: string
+  readonly id: string
 
-  constructor(userId: string) {
-    super(`a profile already exists for ${userId}`)
+  constructor(id: string) {
+    super(`a profile already exists for ${id}`)
     this.name = 'ProfileAlreadyExistsError'
-    this.userId = userId
+    this.id = id
   }
 }
 

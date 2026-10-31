@@ -1,26 +1,26 @@
-import type { AreaCell } from './area.ts'
+import type { AreaCell } from './area-cell.ts'
 import type { Experience } from './experience.ts'
-import type { Gender } from './gender.ts'
-import type { PaceRange } from './pace-range.ts'
-import type { PreferredRunTime } from './preferred-run-time.ts'
 import type { UsualDistance } from './usual-distance.ts'
 
 /**
  * A profile as other runners see it — domain.md §4 "Public card". Built only by
- * `Profile.publicCard()`, the one place field visibility is applied. A hidden or unset field is
- * absent; the exact area is never here.
+ * `Profile.publicCard()`, the one place field visibility is applied.
+ *
+ * Every key is always here: a field that is hidden or unset is `null`. `id`, `name`, `area` and the
+ * cell never are; the photo is `null` when there is none. The point and the hidden set are never
+ * here. The photo travels as its key — its public address is the serialiser's to work out.
  */
 export type PublicCard = Readonly<{
-  userId: string
-  displayName: string
+  id: string
+  name: string
+  area: string
   areaCell: AreaCell
-  avatarRef?: string
-  bio?: string
-  birthYear?: number
-  gender?: Gender
-  paceRange?: PaceRange
-  usualDistance?: UsualDistance
-  experience?: Experience
-  preferredRunTimes?: readonly PreferredRunTime[]
-  gear?: readonly string[]
+  photoRef: string | null
+  bio: string | null
+  paceMin: number | null
+  paceMax: number | null
+  experience: Experience | null
+  availability: string | null
+  usualDistance: UsualDistance | null
+  gear: readonly string[] | null
 }>

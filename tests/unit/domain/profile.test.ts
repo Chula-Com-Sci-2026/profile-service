@@ -1,148 +1,162 @@
 import { describe, expect, it } from 'vitest'
-import { Area } from '../../../src/domain/area.ts'
 import { InvalidProfileFieldError } from '../../../src/domain/errors.ts'
-import { PaceRange } from '../../../src/domain/pace-range.ts'
-import { PreferredRunTime } from '../../../src/domain/preferred-run-time.ts'
+import type { HiddenField } from '../../../src/domain/hidden-field.ts'
 import { Profile, type ProfileFields } from '../../../src/domain/profile.ts'
-import { UsualDistance } from '../../../src/domain/usual-distance.ts'
 
-/** A profile carrying only what §3 requires. Overrides add the optional half. */
-function aProfile(overrides: Partial<ProfileFields> = {}): Profile {
-  return new Profile({
-    userId: '7f3a9c2e15',
-    displayName: 'Nok',
-    area: new Area(13.7314, 100.5414),
-    preferredRunTimes: [],
-    gear: [],
+const RAY = '11111111-1111-4111-8111-111111111111'
+
+/** A profile carrying only what §3 requires; every optional field unset. Overrides add the rest. */
+function fields(overrides: Partial<ProfileFields> = {}): ProfileFields {
+  return {
+    id: RAY,
+    name: 'Ray Attajak',
+    bio: null,
+    paceMin: 6,
+    paceMax: 6.5,
+    experience: 'Intermediate',
+    area: 'Lumphini area',
+    latitude: 13.7308,
+    longitude: 100.5418,
+    availability: 'Tue & Thu evenings',
+    usualDistance: null,
+    gear: null,
+    photoRef: null,
     hiddenFields: [],
     ...overrides,
-  })
+  }
 }
 
-const thisYear = new Date().getFullYear()
+const aProfile = (overrides: Partial<ProfileFields> = {}): Profile => new Profile(fields(overrides))
 
-describe('Profile — required fields', () => {
-  it('needs only displayName and area beyond the identity', () => {
-    const profile = aProfile()
-    expect(profile.userId).toBe('7f3a9c2e15')
-    expect(profile.area.equals(new Area(13.7314, 100.5414))).toBe(true)
-    expect(profile.bio).toBeUndefined()
-    expect('birthYear' in profile).toBe(false)
-    expect(profile.gear).toEqual([])
+/** The field an InvalidProfileFieldError names, or undefined when nothing was thrown. */
+function refusedField(overrides: Partial<ProfileFields>): string | undefined {
+  try {
+    aProfile(overrides)
+    return undefined
+  } catch (error) {
+    if (error instanceof InvalidProfileFieldError) return error.field
+    throw error
+  }
+}
+
+describe('Profile — id (§4: a UUID, in lowercase)', () => {
+  it('is the runner’s id', () => {
+    expect(aProfile().id).toBe(RAY)
   })
 
-  it.each(['', '   '])('rejects %p as a userId', (userId) => {
-    expect(() => aProfile({ userId })).toThrow(InvalidProfileFieldError)
+  it.each(['7f3a9c2e15', 'ABCDEF01-2345-4678-89AB-CDEF01234567', '', `${RAY} `])('refuses %j', (id) => {
+    expect(refusedField({ id })).toBe('id')
+  })
+})
+
+describe('Profile — text fields, measured after trimming', () => {
+  it.each([
+    ['name', 80],
+    ['area', 100],
+    ['availability', 120],
+  ] as const)('accepts a %s of %i characters and refuses one more', (field, limit) => {
+    expect(aProfile({ [field]: 'x'.repeat(limit) })[field]).toHaveLength(limit)
+    expect(refusedField({ [field]: 'x'.repeat(limit + 1) })).toBe(field)
   })
 
-  it('rejects a userId over 64 characters', () => {
-    expect(() => aProfile({ userId: 'x'.repeat(65) })).toThrow(InvalidProfileFieldError)
-    expect(aProfile({ userId: 'x'.repeat(64) }).userId).toHaveLength(64)
+  it.each(['name', 'area', 'availability'] as const)('refuses an empty or blank %s — it is required', (field) => {
+    expect(refusedField({ [field]: '' })).toBe(field)
+    expect(refusedField({ [field]: '   ' })).toBe(field)
   })
 
-  it.each(['', '   '])('rejects %p as a displayName', (displayName) => {
-    expect(() => aProfile({ displayName })).toThrow(InvalidProfileFieldError)
+  it('trims what it keeps', () => {
+    const profile = aProfile({ name: '  Ray  ', area: ' Lumphini area ', availability: ' Tue ', bio: ' Hi ' })
+    expect([profile.name, profile.area, profile.availability, profile.bio]).toEqual(['Ray', 'Lumphini area', 'Tue', 'Hi'])
   })
 
-  it('rejects a displayName over 50 characters', () => {
-    expect(() => aProfile({ displayName: 'x'.repeat(51) })).toThrow(InvalidProfileFieldError)
-    expect(aProfile({ displayName: 'x'.repeat(50) }).displayName).toHaveLength(50)
+  it('accepts a bio of 240 characters and refuses 241', () => {
+    expect(aProfile({ bio: 'x'.repeat(240) }).bio).toHaveLength(240)
+    expect(refusedField({ bio: 'x'.repeat(241) })).toBe('bio')
+  })
+
+  it('keeps a blank bio as no bio — null, not an empty string', () => {
+    expect(aProfile({ bio: '   ' }).bio).toBeNull()
   })
 
   it('measures characters the way the contract does — code points, not UTF-16 units', () => {
-    const fiftyCodePoints = 'x'.repeat(49) + '🏃'
-    expect(fiftyCodePoints.length).toBe(51)
-    expect(aProfile({ displayName: fiftyCodePoints }).displayName).toBe(fiftyCodePoints)
-    expect(() => aProfile({ displayName: 'x'.repeat(50) + '🏃' })).toThrow(InvalidProfileFieldError)
-  })
-
-  it('trims text before measuring it', () => {
-    expect(aProfile({ displayName: '  Nok  ' }).displayName).toBe('Nok')
-    expect(aProfile({ userId: ' 7f3a9c2e15 ' }).userId).toBe('7f3a9c2e15')
+    const eightyCodePoints = 'x'.repeat(79) + '🏃'
+    expect(eightyCodePoints.length).toBe(81)
+    expect(aProfile({ name: eightyCodePoints }).name).toBe(eightyCodePoints)
+    expect(refusedField({ name: 'x'.repeat(80) + '🏃' })).toBe('name')
   })
 })
 
-describe('Profile — optional fields', () => {
-  it('rejects a bio over 500 characters', () => {
-    expect(() => aProfile({ bio: 'x'.repeat(501) })).toThrow(InvalidProfileFieldError)
-    expect(aProfile({ bio: 'x'.repeat(500) }).bio).toHaveLength(500)
+describe('Profile — pace (§4)', () => {
+  it('keeps each end to the nearest second', () => {
+    const profile = aProfile({ paceMin: 6.3333, paceMax: 6.5 })
+    expect(profile.paceMin).toBe(6.333333333333333)
   })
 
-  it('rejects an avatarRef over 128 characters', () => {
-    expect(() => aProfile({ avatarRef: 'x'.repeat(129) })).toThrow(InvalidProfileFieldError)
-    expect(aProfile({ avatarRef: 'x'.repeat(128) }).avatarRef).toHaveLength(128)
+  it('refuses a paceMin slower than paceMax, naming paceMin', () => {
+    expect(refusedField({ paceMin: 7, paceMax: 6 })).toBe('paceMin')
   })
 
-  it('treats whitespace-only optional text as never given, so absent is the only unset state', () => {
-    expect(aProfile({ bio: '   ' }).bio).toBeUndefined()
-    expect('bio' in aProfile({ bio: '   ' })).toBe(false)
+  it('compares the ends once rounded, so two values in the same second are equal, not reversed', () => {
+    const profile = aProfile({ paceMin: 6.334, paceMax: 6.333 })
+    expect(profile.paceMin).toBe(6.333333333333333)
+    expect(profile.paceMax).toBe(6.333333333333333)
   })
 
-  it.each(['banana', '', 'MALE'])('rejects %p as a gender', (gender) => {
-    expect(() => aProfile({ gender: gender as never })).toThrow(InvalidProfileFieldError)
+  it('accepts one steady pace as both ends', () => {
+    expect(aProfile({ paceMin: 5, paceMax: 5 }).paceMax).toBe(5)
   })
 
-  it('holds the area as a value object that knows its cell', () => {
-    const profile = aProfile({ area: new Area(13.803, 100.553) })
-    expect(profile.area).toBeInstanceOf(Area)
-    expect(profile.area.cell()).toMatchObject({ latitude: 13.8, longitude: 100.55 })
-  })
-
-  it.each(['expert', ''])('rejects %p as an experience', (experience) => {
-    expect(() => aProfile({ experience: experience as never })).toThrow(InvalidProfileFieldError)
-  })
-
-  it('holds value objects rather than bare numbers', () => {
-    const profile = aProfile({ paceRange: new PaceRange(300, 360), usualDistance: new UsualDistance(8_000) })
-    expect(profile.paceRange?.fastest.secondsPerKilometre).toBe(300)
-    expect(profile.paceRange?.slowest.secondsPerKilometre).toBe(360)
-    expect(profile.usualDistance?.metres).toBe(8_000)
+  it('names the end that broke its own rule', () => {
+    expect(refusedField({ paceMin: 0 })).toBe('paceMin')
+    expect(refusedField({ paceMax: 20.5 })).toBe('paceMax')
   })
 })
 
-describe('Profile — birthYear (§4: integer, 1900 to the current year)', () => {
-  it.each([1900, 1994, thisYear])('accepts %i', (birthYear) => {
-    expect(aProfile({ birthYear }).birthYear).toBe(birthYear)
+describe('Profile — experience (§4: exact case)', () => {
+  it.each(['Beginner', 'Intermediate', 'Advanced'] as const)('accepts %p', (experience) => {
+    expect(aProfile({ experience }).experience).toBe(experience)
   })
 
-  it.each([1899, thisYear + 1])('rejects %i', (birthYear) => {
-    expect(() => aProfile({ birthYear })).toThrow(InvalidProfileFieldError)
-  })
-
-  it('rejects a fractional year', () => {
-    expect(() => aProfile({ birthYear: 1994.5 })).toThrow(InvalidProfileFieldError)
-  })
-
-  it('is optional — left out, it is absent', () => {
-    expect('birthYear' in aProfile()).toBe(false)
+  it.each(['beginner', 'Expert', ''])('refuses %p', (experience) => {
+    expect(refusedField({ experience: experience as never })).toBe('experience')
   })
 })
 
-describe('Profile — sets', () => {
-  it('drops duplicates, because a set is not a list', () => {
-    const profile = aProfile({
-      preferredRunTimes: [new PreferredRunTime('mon', 'evening'), new PreferredRunTime('mon', 'evening')],
+describe('Profile — the point (§4: degrees, WGS 84)', () => {
+  it.each([
+    [-90, -180],
+    [90, 180],
+    [0, 0],
+  ])('accepts %p, %p', (latitude, longitude) => {
+    expect(aProfile({ latitude, longitude })).toMatchObject({ latitude, longitude })
+  })
+
+  it.each([
+    [90.000001, 0, 'latitude'],
+    [-90.000001, 0, 'latitude'],
+    [Number.NaN, 0, 'latitude'],
+    [0, 180.000001, 'longitude'],
+    [0, -180.000001, 'longitude'],
+    [0, Number.POSITIVE_INFINITY, 'longitude'],
+  ])('refuses %p, %p, naming %s', (latitude, longitude, field) => {
+    expect(refusedField({ latitude, longitude })).toBe(field)
+  })
+
+  it('knows its cell', () => {
+    expect(aProfile({ latitude: 13.73172, longitude: 100.54153 }).areaCell()).toMatchObject({
+      latitude: 13.73,
+      longitude: 100.54,
     })
-    expect(profile.preferredRunTimes).toHaveLength(1)
+  })
+})
+
+describe('Profile — usual distance (§4)', () => {
+  it('holds one of the three bands', () => {
+    expect(aProfile({ usualDistance: '5–10 km' }).usualDistance).toBe('5–10 km')
   })
 
-  it('sorts run times by day, then time of day', () => {
-    const profile = aProfile({
-      preferredRunTimes: [
-        new PreferredRunTime('wed', 'evening'),
-        new PreferredRunTime('mon', 'evening'),
-        new PreferredRunTime('mon', 'early_morning'),
-      ],
-    })
-    expect(profile.preferredRunTimes.map((t) => `${t.dayOfWeek}/${t.timeOfDay}`)).toEqual([
-      'mon/early_morning',
-      'mon/evening',
-      'wed/evening',
-    ])
-  })
-
-  it('is empty rather than absent when unset', () => {
-    expect(aProfile().preferredRunTimes).toEqual([])
+  it('refuses a hyphen for the en dash', () => {
+    expect(refusedField({ usualDistance: '5-10 km' as never })).toBe('usualDistance')
   })
 })
 
@@ -151,30 +165,25 @@ describe('Profile — gear (§4: up to 10 items, each 1–50 characters after tr
     expect(aProfile({ gear: ['Pegasus 41', 'Forerunner 265'] }).gear).toEqual(['Pegasus 41', 'Forerunner 265'])
   })
 
-  it('trims each item', () => {
-    expect(aProfile({ gear: ['  Pegasus 41  '] }).gear).toEqual(['Pegasus 41'])
-  })
-
-  it('collapses items that are equal once trimmed into the first', () => {
-    expect(aProfile({ gear: ['Pegasus 41', ' Pegasus 41 ', 'Forerunner 265'] }).gear).toEqual([
+  it('trims each item, and collapses items equal once trimmed into the first', () => {
+    expect(aProfile({ gear: ['  Pegasus 41  ', 'Pegasus 41', 'Forerunner 265'] }).gear).toEqual([
       'Pegasus 41',
       'Forerunner 265',
     ])
   })
 
-  it.each(['', '   '])('rejects %p as an item', (item) => {
-    expect(() => aProfile({ gear: [item] })).toThrow(InvalidProfileFieldError)
+  it('keeps no items as no gear — null, never []', () => {
+    expect(aProfile({ gear: [] }).gear).toBeNull()
   })
 
-  it('rejects an item over 50 characters, counting code points', () => {
-    expect(() => aProfile({ gear: ['x'.repeat(51)] })).toThrow(InvalidProfileFieldError)
-    expect(aProfile({ gear: ['x'.repeat(49) + '🏃'] }).gear[0]).toHaveLength(51)
+  it.each(['', '   ', 'x'.repeat(51)])('refuses %p as an item', (item) => {
+    expect(refusedField({ gear: [item] })).toBe('gear')
   })
 
-  it('accepts 10 items and rejects 11', () => {
+  it('accepts 10 items and refuses 11', () => {
     const items = Array.from({ length: 11 }, (_, i) => `item ${i}`)
     expect(aProfile({ gear: items.slice(0, 10) }).gear).toHaveLength(10)
-    expect(() => aProfile({ gear: items })).toThrow(expect.objectContaining({ field: 'gear' }))
+    expect(refusedField({ gear: items })).toBe('gear')
   })
 
   it('counts items after collapsing, so 11 entries naming 10 items are fine', () => {
@@ -183,20 +192,51 @@ describe('Profile — gear (§4: up to 10 items, each 1–50 characters after tr
   })
 })
 
+describe('Profile — photoRef (§4: up to 128 characters)', () => {
+  it('accepts 128 characters and refuses 129', () => {
+    expect(aProfile({ photoRef: 'x'.repeat(128) }).photoRef).toHaveLength(128)
+    expect(refusedField({ photoRef: 'x'.repeat(129) })).toBe('photoRef')
+  })
+})
+
+describe('Profile — hiddenFields (§4)', () => {
+  it('is a set in declared order', () => {
+    expect(aProfile({ hiddenFields: ['gear', 'bio', 'gear', 'pace'] }).hiddenFields).toEqual(['bio', 'pace', 'gear'])
+  })
+
+  it.each(['name', 'area', 'photoRef', 'paceMin', 'id', 'banana'])('refuses %p — it cannot be hidden', (field) => {
+    expect(refusedField({ hiddenFields: [field as HiddenField] })).toBe('hiddenFields')
+  })
+})
+
+describe('Profile — an unset field is null, never absent (§3)', () => {
+  it('has every key, null when unset', () => {
+    const profile = aProfile()
+    for (const key of ['bio', 'usualDistance', 'gear', 'photoRef'] as const) {
+      expect(key in profile).toBe(true)
+      expect(profile[key]).toBeNull()
+    }
+  })
+})
+
 describe('Profile — immutability', () => {
   it('is frozen', () => {
     const profile = aProfile()
     expect(Object.isFrozen(profile)).toBe(true)
     expect(() => {
-      ;(profile as { displayName: string }).displayName = 'Beam'
+      ;(profile as { name: string }).name = 'Beam'
     }).toThrow(TypeError)
   })
 
-  it('freezes its sets too — and the compiler says so first', () => {
-    const profile = aProfile({ gear: ['Pegasus 41'] })
+  it('freezes its lists too — and the compiler says so first', () => {
+    const profile = aProfile({ gear: ['Pegasus 41'], hiddenFields: ['bio'] })
     expect(() =>
-      // @ts-expect-error a set is readonly: this must not compile, and must throw if it ever does
-      profile.gear.push('Forerunner 265'),
+      // @ts-expect-error gear is readonly: this must not compile, and must throw if it ever does
+      profile.gear?.push('Forerunner 265'),
+    ).toThrow(TypeError)
+    expect(() =>
+      // @ts-expect-error the hidden set is readonly
+      profile.hiddenFields.push('gear'),
     ).toThrow(TypeError)
   })
 })

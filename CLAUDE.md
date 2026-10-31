@@ -27,9 +27,10 @@ npm run build      # tsc -> dist/
 **Imports end in `.ts`, not `.js`** — `import { Profile } from './profile.ts'`. Deliberate;
 TypeScript rewrites the extension on emit. Do not "fix" it.
 
-**Optional profile fields are `declare readonly bio?: string`.** The `declare` is load-bearing: a
-plain field would define the key as `undefined`, and `domain.md` §3 says an unset scalar is
-*absent*. Removing it breaks `'bio' in profile`.
+**An unset profile field is `null`, never absent.** `readonly bio: string | null` on `Profile`,
+`null` on the wire and `NULL` in the column — one value form end to end (`domain.md` §3). Gear with
+no items is `null`, never `[]`. `exactOptionalPropertyTypes` still keeps `undefined` out: an
+optional *input* key is omitted, never passed as `undefined`.
 
 **Layers are enforced by `npm run lint`, not convention.** `interface/http → application → domain
 ← infrastructure`. `domain/` imports nothing — no Hono, Drizzle, Zod, pino. `src/index.ts` is the

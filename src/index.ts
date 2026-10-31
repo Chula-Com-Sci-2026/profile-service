@@ -1,18 +1,16 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { serve } from '@hono/node-server'
 import { pino } from 'pino'
-import { createAvatarUpload } from './application/create-avatar-upload.ts'
-import { createProfile } from './application/create-profile.ts'
 import { getProfile } from './application/get-profile.ts'
+import { getPublicProfile } from './application/get-public-profile.ts'
 import type { Publishing } from './application/publishing.ts'
-import { updateProfile } from './application/update-profile.ts'
+import { saveProfile } from './application/save-profile.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
 import { httpProfileEvents, logUndelivered } from './infrastructure/http-profile-events.ts'
 import { identityServiceTokens } from './infrastructure/identity-service-tokens.ts'
-import { logOrphan } from './infrastructure/log-orphan.ts'
-import { createAvatarStorage } from './infrastructure/minio-avatar-storage.ts'
+import { photoUrlFor } from './infrastructure/photo-url.ts'
 import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
 import { createApp } from './interface/http/app.ts'
 import { currentCorrelationId } from './interface/http/request-context.ts'
@@ -37,8 +35,9 @@ const database = createDatabase(config.databaseUrl, (error) => {
   logger.error({ err: error }, 'an idle database connection failed')
 })
 const repository = new DrizzleProfileRepository(database.db)
-const avatars = createAvatarStorage(config.objectStorage)
 
+/** A photo's public address, from its key. Whatever serialises a card is handed this. */
+const photoUrl = photoUrlFor(config.objectStorage)
 
 /**
  * Profile events to Buddy Discovery (ADR-0019): REST now, a broker later, behind one port.
@@ -55,6 +54,7 @@ const events =
           clientSecret: config.events.clientSecret,
         }),
         currentCorrelationId,
+        photoUrl,
       })
 if (config.events === undefined) logger.info('no EVENT_SUBSCRIBERS configured: profile events are not published')
 
@@ -65,19 +65,14 @@ let draining = false
 
 const app = createApp({
   useCases: {
-    createProfile: createProfile(repository, publishing),
+    saveProfile: saveProfile(repository, publishing),
     getProfile: getProfile(repository),
-    updateProfile: updateProfile(
-      repository,
-      avatars,
-      logOrphan(logger, currentCorrelationId, 'an avatar object was orphaned by a profile change'),
-      publishing,
-    ),
-    createAvatarUpload: createAvatarUpload(repository, avatars),
+    getPublicProfile: getPublicProfile(repository),
   },
   logger,
   authentication: config.accessToken,
   readiness: { isDraining: () => draining, canServe: () => database.ping() },
+  photoUrl,
 })
 
 /** How long the close may take once draining is over. The drain is budgeted separately. */

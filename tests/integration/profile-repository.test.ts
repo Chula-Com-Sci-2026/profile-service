@@ -2,14 +2,14 @@ import { sql } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest'
-import { Area } from '../../src/domain/area.ts'
 import { InvalidProfileFieldError, ProfileAlreadyExistsError } from '../../src/domain/errors.ts'
-import { PaceRange } from '../../src/domain/pace-range.ts'
-import { PreferredRunTime } from '../../src/domain/preferred-run-time.ts'
 import { Profile } from '../../src/domain/profile.ts'
-import { UsualDistance } from '../../src/domain/usual-distance.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
 import { CorruptProfileRowError } from '../../src/infrastructure/profile-mapper.ts'
+
+const RAY = '11111111-1111-4111-8111-111111111111'
+const BEAM = '44444444-4444-4444-8444-444444444444'
+const PHOTO = `photos/${RAY}/0b5f3c1e-7d2a-4e9b-8f61-2c4d6e8a0b1c`
 
 let pool: pg.Pool
 let db: NodePgDatabase
@@ -31,120 +31,144 @@ beforeEach(async () => {
 
 function aFullProfile(): Profile {
   return new Profile({
-    userId: '7f3a9c2e15',
-    displayName: 'Nok',
+    id: RAY,
+    name: 'Ray Attajak',
     bio: 'Chasing a sub-2 half.',
-    avatarRef: 'avatars/7f3a9c2e15.jpg',
-    birthYear: 1994,
-    gender: 'female',
-    area: new Area(13.731723456, 100.541532),
-    paceRange: new PaceRange(330, 390),
-    usualDistance: new UsualDistance(10_000),
-    experience: 'intermediate',
-    preferredRunTimes: [new PreferredRunTime('sat', 'early_morning'), new PreferredRunTime('mon', 'evening')],
+    paceMin: 380 / 60,
+    paceMax: 6.5,
+    experience: 'Intermediate',
+    area: 'Lumphini area',
+    latitude: 13.731723456,
+    longitude: 100.541532,
+    availability: 'Tue & Thu evenings',
+    usualDistance: '5–10 km',
     gear: ['Pegasus 41', 'Forerunner 265'],
-    hiddenFields: ['gender', 'birthYear'],
+    photoRef: PHOTO,
+    hiddenFields: ['gear', 'bio'],
   })
 }
 
 function aMinimalProfile(): Profile {
-  return new Profile({
-    userId: 'b41d8e0a63',
-    displayName: 'Beam',
-    area: new Area(13.729, 100.559),
-    preferredRunTimes: [],
-    gear: [],
-    hiddenFields: [],
+  return Profile.create(BEAM, {
+    name: 'Beam',
+    paceMin: 5,
+    paceMax: 6,
+    experience: 'Beginner',
+    area: 'Benjakitti Park',
+    latitude: 13.729,
+    longitude: 100.559,
+    availability: 'Weekends',
   })
 }
 
+/** A row the table accepts, with one column set by hand — for the boundary tests below. */
+async function insertRow(column: string, value: string): Promise<void> {
+  const row: Record<string, string> = {
+    id: `'${RAY}'`,
+    name: `'Ann'`,
+    pace_min: '5',
+    pace_max: '6',
+    experience: `'Advanced'`,
+    area: `'Lumphini Park'`,
+    latitude: '13.73',
+    longitude: '100.54',
+    availability: `'Nights'`,
+    [column]: value,
+  }
+  await db.execute(sql.raw(`INSERT INTO profiles (${Object.keys(row).join(', ')}) VALUES (${Object.values(row).join(', ')})`))
+}
+
 describe('round trip', () => {
-  it('returns every field it was given', async () => {
+  it('returns every field it was given, under the same names', async () => {
     await repository.insert(aFullProfile())
-    const found = await repository.findById('7f3a9c2e15')
+    expect(await repository.findById(RAY)).toEqual(aFullProfile())
+  })
+
+  it('keeps the pace and the point exactly, as double precision', async () => {
+    await repository.insert(aFullProfile())
+    const found = await repository.findById(RAY)
+    expect(found?.paceMin).toBe(6.333333333333333)
+    expect(found?.latitude).toBe(13.731723456)
+  })
+
+  it('leaves an unset field null, never absent and never empty', async () => {
+    await repository.insert(aMinimalProfile())
+    const found = await repository.findById(BEAM)
 
     expect(found).not.toBeNull()
-    expect(found?.displayName).toBe('Nok')
-    expect(found?.bio).toBe('Chasing a sub-2 half.')
-    expect(found?.avatarRef).toBe('avatars/7f3a9c2e15.jpg')
-    expect(found?.birthYear).toBe(1994)
-    expect(found?.gender).toBe('female')
-    expect(found?.area.equals(new Area(13.731723456, 100.541532))).toBe(true)
-    expect(found?.experience).toBe('intermediate')
-    expect(found?.hiddenFields).toEqual(['birthYear', 'gender'])
+    expect([found?.bio, found?.usualDistance, found?.gear, found?.photoRef]).toEqual([null, null, null, null])
+    expect(found?.hiddenFields).toEqual([])
   })
 
-  it('brings back value objects, not bare numbers', async () => {
-    await repository.insert(aFullProfile())
-    const found = await repository.findById('7f3a9c2e15')
-
-    expect(found?.paceRange).toBeInstanceOf(PaceRange)
-    expect(found?.paceRange?.equals(new PaceRange(330, 390))).toBe(true)
-    expect(found?.usualDistance).toBeInstanceOf(UsualDistance)
-    expect(found?.usualDistance?.metres).toBe(10_000)
-    expect(found?.gear).toEqual(['Pegasus 41', 'Forerunner 265'])
+  it('stores no gear as SQL NULL, not as []', async () => {
+    await repository.insert(aMinimalProfile())
+    const result = await db.execute(sql`SELECT gear FROM profiles WHERE id = ${BEAM}`)
+    expect(result.rows[0]?.['gear']).toBeNull()
   })
 
-  it('writes sets to the column already in declared order', async () => {
+  it('writes the hidden set to the column already in declared order', async () => {
     // Read the raw column, not the mapped Profile: toDomain rebuilds a Profile and its
     // constructor re-sorts, so asserting through findById would pass whatever was stored.
     await repository.insert(aFullProfile())
-    const result = await db.execute(
-      sql`SELECT preferred_run_times FROM profiles WHERE user_id = '7f3a9c2e15'`,
-    )
-    const row = result.rows[0]
-
-    expect(row).toBeDefined()
-    expect(row?.['preferred_run_times']).toEqual([
-      { dayOfWeek: 'mon', timeOfDay: 'evening' },
-      { dayOfWeek: 'sat', timeOfDay: 'early_morning' },
-    ])
-  })
-
-  it('leaves an unset scalar absent, never null and never empty', async () => {
-    await repository.insert(aMinimalProfile())
-    const found = await repository.findById('b41d8e0a63')
-
-    expect(found).not.toBeNull()
-    expect('bio' in (found as Profile)).toBe(false)
-    expect('paceRange' in (found as Profile)).toBe(false)
-    expect('birthYear' in (found as Profile)).toBe(false)
-    expect(found?.gear).toEqual([])
+    const result = await db.execute(sql`SELECT hidden_fields FROM profiles WHERE id = ${RAY}`)
+    expect(result.rows[0]?.['hidden_fields']).toEqual(['bio', 'gear'])
   })
 
   it('answers null for a runner with no profile', async () => {
-    expect(await repository.findById('nobody')).toBeNull()
+    expect(await repository.findById(BEAM)).toBeNull()
+  })
+
+  it.each(['not-a-uuid', 'x'.repeat(100), ''])(
+    'answers null for %j, which is not an id, without the uuid column raising',
+    async (id) => {
+      await repository.insert(aFullProfile())
+      expect(await repository.findById(id)).toBeNull()
+    },
+  )
+
+  it('answers null for an id in uppercase — ids are lowercase, and the edge lowercases what it is sent', async () => {
+    const lettered = 'abcdef01-2345-4678-89ab-cdef01234567'
+    await repository.insert(Profile.create(lettered, { name: 'Ann', paceMin: 5, paceMax: 6, experience: 'Advanced', area: 'Lumphini Park', latitude: 13.73, longitude: 100.54, availability: 'Nights' }))
+    expect(await repository.findById(lettered)).not.toBeNull()
+    expect(await repository.findById(lettered.toUpperCase())).toBeNull()
   })
 })
 
 describe('insert — one profile per runner (§5)', () => {
-  it('raises a domain error on the second insert, not a driver error', async () => {
+  it('raises a domain error on the second insert, naming the runner, not a driver error', async () => {
     await repository.insert(aFullProfile())
     await expect(repository.insert(aFullProfile())).rejects.toThrow(ProfileAlreadyExistsError)
-  })
-
-  it('names the runner in the error', async () => {
-    await repository.insert(aFullProfile())
-    await expect(repository.insert(aFullProfile())).rejects.toMatchObject({ userId: '7f3a9c2e15' })
+    await expect(repository.insert(aFullProfile())).rejects.toMatchObject({ id: RAY })
   })
 
   it('leaves the stored profile untouched by the rejected insert', async () => {
     await repository.insert(aFullProfile())
-    const clash = aFullProfile().update({ displayName: 'Someone Else' })
+    const clash = new Profile({ ...aFullProfile(), name: 'Someone Else' } as ConstructorParameters<typeof Profile>[0])
     await expect(repository.insert(clash)).rejects.toThrow(ProfileAlreadyExistsError)
-    expect((await repository.findById('7f3a9c2e15'))?.displayName).toBe('Nok')
+    expect((await repository.findById(RAY))?.name).toBe('Ray Attajak')
   })
 })
 
 describe('update', () => {
   it('persists the change and reports that a row moved', async () => {
     await repository.insert(aFullProfile())
-    const changed = aFullProfile().update({ displayName: 'Nok R.', bio: null })
+    const changed = aFullProfile().save({
+      name: 'Ray A.',
+      paceMin: 6,
+      paceMax: 6.5,
+      experience: 'Intermediate',
+      area: 'Lumphini area',
+      latitude: 13.7308,
+      longitude: 100.5418,
+      availability: 'Tue & Thu evenings',
+      gear: null,
+    })
 
     expect(await repository.update(changed)).toBe(true)
-    const found = await repository.findById('7f3a9c2e15')
-    expect(found?.displayName).toBe('Nok R.')
-    expect(found?.bio).toBeUndefined()
+    const found = await repository.findById(RAY)
+    expect(found?.name).toBe('Ray A.')
+    expect(found?.bio).toBeNull()
+    expect(found?.gear).toBeNull()
   })
 
   it('reports that nothing moved when there is no such profile', async () => {
@@ -154,99 +178,25 @@ describe('update', () => {
 
 describe('row to domain is a boundary', () => {
   it('reports a corrupt row as our problem, keeping the field error as the cause', async () => {
-    await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, gender, preferred_run_times)
-      VALUES ('cause', 'Ann', 1992, 13.73, 100.54, 'banana', '[]'::jsonb)
-    `)
-    const error = await repository.findById('cause').catch((e: unknown) => e)
+    await insertRow('experience', `'beginner'`)
+    const error = await repository.findById(RAY).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(CorruptProfileRowError)
-    expect((error as CorruptProfileRowError).userId).toBe('cause')
+    expect((error as CorruptProfileRowError).id).toBe(RAY)
     expect((error as Error).cause).toBeInstanceOf(InvalidProfileFieldError)
   })
 
-  it('rejects a row the table was happy to store but §4 forbids', async () => {
-    // The table enforces shape and the primary key. It has no opinion about gender.
-    await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, birth_year, area_latitude, area_longitude, gender, preferred_run_times)
-      VALUES ('2c9f5b7d10', 'Ploy', 1996, 13.73, 100.54, 'banana', '[]'::jsonb)
-    `)
-    await expect(repository.findById('2c9f5b7d10')).rejects.toThrow(CorruptProfileRowError)
-  })
-
   it.each([
-    ["'null'::jsonb", 'JSON null'],
-    ['\'"marathon"\'::jsonb', 'a bare string'],
-    ["'{}'::jsonb", 'an object'],
-  ])('rejects a set column holding %s — jsonb NOT NULL does not stop it', async (stored) => {
-    await db.execute(
-      sql.raw(`INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, gear, preferred_run_times)
-               VALUES ('shape', 'Ann', 13.73, 100.54, ${stored}, '[]'::jsonb)`),
-    )
-    await expect(repository.findById('shape')).rejects.toThrow(CorruptProfileRowError)
-  })
-
-  it('rejects a set holding a member of the wrong type', async () => {
-    await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, gear, preferred_run_times)
-      VALUES ('member', 'Ann', 13.73, 100.54, '[42]'::jsonb, '[]'::jsonb)
-    `)
-    await expect(repository.findById('member')).rejects.toThrow(CorruptProfileRowError)
-  })
-
-  it('rejects a run time missing half of its pair', async () => {
-    await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, preferred_run_times)
-      VALUES ('pair', 'Ann', 13.73, 100.54, '[{"dayOfWeek":"mon"}]'::jsonb)
-    `)
-    await expect(repository.findById('pair')).rejects.toThrow(CorruptProfileRowError)
-  })
-
-  it('rejects a stored value that is out of range', async () => {
-    await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, pace_fastest, pace_slowest, preferred_run_times)
-      VALUES ('e86a1f4c92', 'Bank', 13.73, 100.54, 20, 400, '[]'::jsonb)
-    `)
-    await expect(repository.findById('e86a1f4c92')).rejects.toThrow(CorruptProfileRowError)
-  })
-
-  it('rejects a stored area that is off the map', async () => {
-    // double precision holds 91 happily; §4 does not.
-    await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, preferred_run_times)
-      VALUES ('offmap', 'Ann', 91, 100.54, '[]'::jsonb)
-    `)
-    await expect(repository.findById('offmap')).rejects.toThrow(CorruptProfileRowError)
-  })
-
-  it('refuses half a pace range at the table — both ends or neither is shape', async () => {
-    const error = await db
-      .execute(sql`
-        INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, pace_fastest, preferred_run_times)
-        VALUES ('half', 'Ann', 13.73, 100.54, 330, '[]'::jsonb)
-      `)
-      .catch((e: unknown) => e)
-
-    // The driver error may be wrapped; find the layer carrying the SQLSTATE. Any other failure —
-    // a misspelt column, say — must not pass for the constraint doing its job.
-    let current: unknown = error
-    while (current instanceof Error && !('code' in current)) current = current.cause
-    expect(current).toMatchObject({ code: '23514', constraint: 'pace_range_has_both_ends' })
-  })
-
-  it('rejects a stored pace range whose fastest end is slower', async () => {
-    await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, pace_fastest, pace_slowest, preferred_run_times)
-      VALUES ('reversed', 'Ann', 13.73, 100.54, 400, 330, '[]'::jsonb)
-    `)
-    await expect(repository.findById('reversed')).rejects.toThrow(CorruptProfileRowError)
-  })
-
-  it('rejects a stored hidden set naming a field that is always shown', async () => {
-    await db.execute(sql`
-      INSERT INTO profiles (user_id, display_name, area_latitude, area_longitude, preferred_run_times, hidden_fields)
-      VALUES ('shown', 'Ann', 13.73, 100.54, '[]'::jsonb, '["displayName"]'::jsonb)
-    `)
-    await expect(repository.findById('shown')).rejects.toThrow(CorruptProfileRowError)
+    ['usual_distance', `'5-10 km'`, 'a hyphen for the en dash'],
+    ['gear', `'"marathon"'::jsonb`, 'gear as a bare string — jsonb does not stop it'],
+    ['gear', `'[42]'::jsonb`, 'gear holding something that is not text'],
+    ['hidden_fields', `'["name"]'::jsonb`, 'a hidden set naming a field that is always shown'],
+    ['hidden_fields', `'null'::jsonb`, 'a hidden set of JSON null — jsonb NOT NULL does not stop it'],
+    ['pace_min', `0`, 'a pace of zero'],
+    ['pace_min', `7`, 'a paceMin slower than paceMax'],
+    ['latitude', `91`, 'a point off the map'],
+  ])('rejects %s = %s — %s', async (column, value) => {
+    await insertRow(column, value)
+    await expect(repository.findById(RAY)).rejects.toThrow(CorruptProfileRowError)
   })
 })

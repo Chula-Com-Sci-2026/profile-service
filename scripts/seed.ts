@@ -1,32 +1,25 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { sql } from 'drizzle-orm'
-import { createProfile } from '../src/application/create-profile.ts'
-import type { AvatarStorage } from '../src/application/ports/avatar-storage.ts'
-import { updateProfile } from '../src/application/update-profile.ts'
+import { saveProfile } from '../src/application/save-profile.ts'
 import type { Profile } from '../src/domain/profile.ts'
 import { loadDatabaseUrl, loadEventPublishing, loadObjectStorage } from '../src/infrastructure/config.ts'
 import { createDatabase } from '../src/infrastructure/database.ts'
 import { DrizzleProfileRepository } from '../src/infrastructure/drizzle-profile-repository.ts'
 import { httpProfileEvents } from '../src/infrastructure/http-profile-events.ts'
 import { identityServiceTokens } from '../src/infrastructure/identity-service-tokens.ts'
-import { createAvatarStorage } from '../src/infrastructure/minio-avatar-storage.ts'
+import { photoUrlFor } from '../src/infrastructure/photo-url.ts'
 import { silentProfileEvents } from '../src/infrastructure/silent-profile-events.ts'
-import { toFields } from '../src/interface/http/profile-input.ts'
-import { profileWrite } from '../src/interface/http/validators.ts'
+import { toContent } from '../src/interface/http/profile-input.ts'
+import { profileSave } from '../src/interface/http/validators.ts'
 
 /**
- * Loads `seed.json` into the database, and `avatars/` into object storage.
+ * Loads `seed.json` into the database.
  *
- * Profiles go in through `createProfile`, not a bulk INSERT, so a runner that breaks a §4 rule
+ * Profiles go in through `saveProfile`, not a bulk INSERT, so a runner that breaks a §4 rule
  * fails here rather than landing in the table and failing the next time somebody reads it. Each
- * entry is validated with the same schema an API request would be — `userId` comes from outside
- * the body, exactly as it does from the path.
- *
- * Avatars go in the way a client would: ask for a presigned URL, PUT the bytes to it, then set
- * `avatarRef` through `updateProfile`. No shortcut through the S3 client, so seeding exercises
- * the same handshake the API offers — and the key cannot be written into seed.json, because it
- * carries a uuid that only exists once the upload is authorised.
+ * entry is validated with the same schema an API request would be — `id` comes from outside the
+ * body, exactly as it does from the token.
  */
 if (process.env['NODE_ENV'] === 'production') {
   console.error('refusing to seed: NODE_ENV is production, and this truncates the table first')
@@ -40,15 +33,11 @@ if (!Array.isArray(entries)) throw new Error('seed.json must hold an array of ru
 const database = createDatabase(loadDatabaseUrl(), (error) => {
   console.error('an idle database connection failed:', error.message)
 })
-const avatars: AvatarStorage = createAvatarStorage(loadObjectStorage())
-const repository = new DrizzleProfileRepository(database.db)
-
 
 /**
  * The rows go in under a transaction, and an event must not leave before its change is
- * committed — so inserts publish nothing, and each runner is published once the transaction
- * commits. A runner with an avatar is published again by `updateProfile`; snapshots make that
- * harmless.
+ * committed — so saves publish nothing, and each runner is published once the transaction
+ * commits.
  */
 const quiet = { events: silentProfileEvents, onUndelivered: () => {} }
 const eventSettings = loadEventPublishing()
@@ -64,60 +53,37 @@ const publishing = {
             clientSecret: eventSettings.clientSecret,
           }),
           currentCorrelationId: () => undefined,
+          photoUrl: photoUrlFor(loadObjectStorage()),
         }),
-  onUndelivered: (userId: string, error: unknown) => {
-    console.error(`the event for ${userId} was not delivered:`, error instanceof Error ? error.message : error)
+  onUndelivered: (id: string, error: unknown) => {
+    console.error(`the event for ${id} was not delivered:`, error instanceof Error ? error.message : error)
   },
 }
 const seeded: Profile[] = []
 
-/** Upload the bytes to the presigned URL, then record the key it minted. */
-async function attachAvatar(userId: string): Promise<string | undefined> {
-  const file = here(`./avatars/${userId}.png`)
-  if (!existsSync(file)) return undefined
-
-  const { uploadUrl, avatarRef } = await avatars.authoriseUpload(userId)
-  // The URL is signed over the *public* endpoint, so whoever runs this must be able to reach it
-  // — from the host in development, that is OBJECT_STORAGE_PUBLIC_ENDPOINT.
-  const uploaded = await fetch(uploadUrl, { method: 'PUT', body: readFileSync(file) })
-  if (!uploaded.ok) throw new Error(`uploading ${userId}'s avatar failed: ${uploaded.status}`)
-
-  await updateProfile(repository, avatars, (id, error) => {
-    console.error(`an avatar object was orphaned for ${id}:`, error)
-  }, publishing)(userId, { avatarRef })
-  return avatarRef
-}
-
 try {
   // One transaction for the rows: a runner that breaks a §4 rule leaves the table as it was,
-  // rather than emptied with whatever happened to insert before the bad one. Uploads happen
-  // after it commits — holding a transaction open across network calls to storage would be a
-  // poor trade for a demo seeder.
+  // rather than emptied with whatever happened to save before the bad one.
   await database.db.transaction(async (tx) => {
     await tx.execute(sql`TRUNCATE profiles`)
-    const insert = createProfile(new DrizzleProfileRepository(tx), quiet)
+    const save = saveProfile(new DrizzleProfileRepository(tx), quiet)
 
     for (const entry of entries) {
       if (typeof entry !== 'object' || entry === null) {
         throw new Error(`seed.json holds something that is not a runner: ${JSON.stringify(entry)}`)
       }
-      const { userId, ...body } = entry as { userId?: unknown }
-      if (typeof userId !== 'string') {
-        throw new Error(`a runner in seed.json has no userId: ${JSON.stringify(entry)}`)
+      const { id, ...body } = entry as { id?: unknown }
+      if (typeof id !== 'string') {
+        throw new Error(`a runner in seed.json has no id: ${JSON.stringify(entry)}`)
       }
-      const profile = await insert(toFields(userId, profileWrite.parse(body)))
+      const profile = await save(id, toContent(profileSave.parse(body)))
       seeded.push(profile)
-      console.log(`seeded  ${profile.userId}  ${profile.displayName}`)
+      console.log(`seeded  ${profile.id}  ${profile.name}`)
     }
   })
 
   for (const profile of seeded) {
-    await publishing.events.updated(profile).catch((error: unknown) => publishing.onUndelivered(profile.userId, error))
-  }
-
-  for (const entry of entries as { userId: string; displayName: string }[]) {
-    const avatarRef = await attachAvatar(entry.userId)
-    if (avatarRef !== undefined) console.log(`avatar  ${entry.userId}  ${avatarRef}`)
+    await publishing.events.updated(profile).catch((error: unknown) => publishing.onUndelivered(profile.id, error))
   }
 
   console.log(`\n${entries.length} runners seeded`)

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { ProfileAlreadyExistsError } from '../domain/errors.ts'
+import { isId } from '../domain/id.ts'
 import type { Profile } from '../domain/profile.ts'
 import type { ProfileRepository } from '../domain/profile-repository.ts'
 import { toDomain, toRow } from './profile-mapper.ts'
@@ -42,7 +43,7 @@ function rootCause(error: unknown): unknown {
  *
  * drizzle puts a failed query's parameters in its error's message, stack and `params`, and
  * Postgres's own `detail` can echo the failing row — so the error handler's log line would carry
- * the runner's exact area, which domain.md keeps inside this service. This keeps what diagnoses
+ * the runner's exact point, which domain.md keeps inside this service. This keeps what diagnoses
  * the failure — the statement, the driver's message and its SQLSTATE — and drops the values.
  */
 export class ProfileWriteFailedError extends Error {
@@ -67,8 +68,11 @@ export class DrizzleProfileRepository implements ProfileRepository {
     this.#db = db
   }
 
-  async findById(userId: string): Promise<Profile | null> {
-    const rows = await this.#db.select().from(profiles).where(eq(profiles.userId, userId)).limit(1)
+  async findById(id: string): Promise<Profile | null> {
+    // The column is `uuid`, which raises on anything that is not one. A value that is not an id
+    // names no runner, so it matches nothing — the question never reaches the database.
+    if (!isId(id)) return null
+    const rows = await this.#db.select().from(profiles).where(eq(profiles.id, id)).limit(1)
     const row = rows[0]
     return row === undefined ? null : toDomain(row)
   }
@@ -77,7 +81,7 @@ export class DrizzleProfileRepository implements ProfileRepository {
     try {
       await this.#db.insert(profiles).values(toRow(profile))
     } catch (error) {
-      if (isUniqueViolation(error)) throw new ProfileAlreadyExistsError(profile.userId)
+      if (isUniqueViolation(error)) throw new ProfileAlreadyExistsError(profile.id)
       throw new ProfileWriteFailedError(error)
     }
   }
@@ -87,7 +91,7 @@ export class DrizzleProfileRepository implements ProfileRepository {
       const result = await this.#db
         .update(profiles)
         .set(toRow(profile))
-        .where(eq(profiles.userId, profile.userId))
+        .where(eq(profiles.id, profile.id))
       return (result.rowCount ?? 0) > 0
     } catch (error) {
       throw new ProfileWriteFailedError(error)

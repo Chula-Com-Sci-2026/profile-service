@@ -10,9 +10,11 @@ import type { Profile } from './profile.ts'
  *
  * `insert` and `update` are separate so §5's one-profile-per-runner invariant is enforced
  * by the primary key rather than by a check-then-write race.
+ *
+ * An id that is not one (§4: a UUID in lowercase) matches nothing: `findById` answers null.
  */
 export interface ProfileRepository {
-  findById(userId: string): Promise<Profile | null>
+  findById(id: string): Promise<Profile | null>
   insert(profile: Profile): Promise<void>
   update(profile: Profile): Promise<boolean>
 }

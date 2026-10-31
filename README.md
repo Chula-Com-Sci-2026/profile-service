@@ -2,7 +2,7 @@
 
 Runner profiles for Can't Run Alone. One runner, one profile: what they are like, and how, when
 and where they usually run. It stores the profile, not the runner — the Identity Service owns
-that, and we take its `userId` as given.
+that, and a profile's `id` is the runner's Identity id, taken as given.
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ curl localhost:3000/up       # {"status":"ok"}
 curl localhost:3000/ready    # {"status":"ready"}
 ```
 
-`/v1` answers **401** without a bearer token. Tokens are Identity's access tokens: HS256, signed
+`/api/v1` answers **401** without a bearer token. Tokens are Identity's access tokens: HS256, signed
 with a secret every service shares (`ACCESS_TOKEN_SECRET`, ADR-0022), issuer
 `cant-run-alone-local`, audience `cant-run-alone-services`, and the runner's id as the subject.
 Holding the secret is enough to sign one. After `npm ci`, from this directory, this makes one for
@@ -39,7 +39,7 @@ console.log(await new SignJWT({}).setProtectedHeader({ alg: 'HS256' })
   .setSubject('11111111-1111-4111-8111-111111111111')
   .setIssuer('cant-run-alone-local').setAudience('cant-run-alone-services')
   .setExpirationTime('15m').sign(new TextEncoder().encode('replace-with-local-access-signing-secret')))")
-curl -H "Authorization: Bearer $TOKEN" localhost:3000/v1/profiles/11111111-1111-4111-8111-111111111111
+curl -H "Authorization: Bearer $TOKEN" localhost:3000/api/v1/me/profile
 ```
 
 Ray's profile is there once `npm run db:seed` has run (see Local development).
@@ -48,17 +48,17 @@ Ray's profile is there once `npm run db:seed` has run (see Local development).
 
 | | | |
 |---|---|---|
-| `PUT` | `/v1/profiles/{userId}` | create one — 409 if it already exists |
-| `GET` | `/v1/profiles/{userId}` | read one |
-| `PATCH` | `/v1/profiles/{userId}` | change one — `null` clears a field |
-| `POST` | `/v1/profiles/{userId}/avatar-uploads` | create an upload — a URL to PUT the avatar to |
+| `GET` | `/api/v1/me/profile` | your whole profile — 404 until you save one |
+| `PUT` | `/api/v1/me/profile` | save it — creates or replaces, 200 every time |
+| `GET` | `/api/v1/runners/{id}` | a runner's public card, yours included |
 | `GET` | `/up` | is the process alive? |
 | `GET` | `/ready` | should traffic come here? |
 | `GET` | `/docs` | this API, rendered |
 | `GET` | `/openapi.yaml` | the contract, as a file |
 
-Everything under `/v1` needs a bearer token from Identity: read anyone's profile, change only
-your own. Nothing outside `/v1` needs a token.
+Everything under `/api/v1` needs a bearer token from Identity. “me” is the token's subject, so a
+runner changes only their own profile; anyone's public card can be read. Nothing outside
+`/api/v1` needs a token.
 
 Profiles cannot be listed or searched — deliberately: Buddy Discovery keeps its own copy of what
 this service publishes, as [docs/domain.md](docs/domain.md) §1 explains.

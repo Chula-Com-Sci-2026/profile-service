@@ -1,27 +1,46 @@
-import { Area } from '../../../src/domain/area.ts'
-import { PaceRange } from '../../../src/domain/pace-range.ts'
-import { Profile, type ProfileFields } from '../../../src/domain/profile.ts'
+import { Profile, type ProfileContent, type ProfileFields } from '../../../src/domain/profile.ts'
+
+/** Identity's Ray (its `seed-demo.js`). */
+export const RAY = '11111111-1111-4111-8111-111111111111'
 
 /**
- * Fields for a valid profile, with overrides for whatever a test cares about.
+ * What a save carries, with overrides for whatever a test cares about.
  * Plain data — it never constructs a Profile, so a test can hand it something §4 forbids.
  */
-export function fieldsFor(overrides: Partial<ProfileFields> = {}): ProfileFields {
+export function contentFor(overrides: Partial<ProfileContent> = {}): ProfileContent {
   return {
-    userId: '7f3a9c2e15',
-    displayName: 'Nok',
-    bio: 'Chasing a sub-2 half.',
-    birthYear: 1994,
-    area: new Area(13.7314, 100.5414),
-    gender: 'female',
-    paceRange: new PaceRange(330, 390),
+    name: 'Ray Attajak',
+    bio: 'Evening runs, Lumphini.',
+    paceMin: 6,
+    paceMax: 6.5,
+    experience: 'Intermediate',
+    area: 'Lumphini area',
+    latitude: 13.7308,
+    longitude: 100.5418,
+    availability: 'Tue & Thu evenings',
     gear: ['Pegasus 41'],
-    hiddenFields: [],
-    preferredRunTimes: [],
     ...overrides,
   }
 }
 
+/** A stored profile — Ray, as `contentFor()` would create him — with any field overridden. */
 export function aProfile(overrides: Partial<ProfileFields> = {}): Profile {
-  return new Profile(fieldsFor(overrides))
+  const created = Profile.create(RAY, contentFor())
+  return new Profile({
+    id: created.id,
+    name: created.name,
+    bio: created.bio,
+    paceMin: created.paceMin,
+    paceMax: created.paceMax,
+    experience: created.experience,
+    area: created.area,
+    latitude: created.latitude,
+    longitude: created.longitude,
+    availability: created.availability,
+    usualDistance: created.usualDistance,
+    gear: created.gear,
+    photoRef: created.photoRef,
+    hiddenFields: created.hiddenFields,
+    ...overrides,
+  })
 }

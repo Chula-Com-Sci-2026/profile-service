@@ -11,24 +11,24 @@ import type { ProfileRepository } from '../../../src/domain/profile-repository.t
 export class InMemoryProfileRepository implements ProfileRepository {
   readonly #profiles = new Map<string, Profile>()
 
-  async findById(userId: string): Promise<Profile | null> {
-    return this.#profiles.get(userId) ?? null
+  async findById(id: string): Promise<Profile | null> {
+    return this.#profiles.get(id) ?? null
   }
 
   async insert(profile: Profile): Promise<void> {
-    if (this.#profiles.has(profile.userId)) throw new ProfileAlreadyExistsError(profile.userId)
-    this.#profiles.set(profile.userId, profile)
+    if (this.#profiles.has(profile.id)) throw new ProfileAlreadyExistsError(profile.id)
+    this.#profiles.set(profile.id, profile)
   }
 
   async update(profile: Profile): Promise<boolean> {
-    if (!this.#profiles.has(profile.userId)) return false
-    this.#profiles.set(profile.userId, profile)
+    if (!this.#profiles.has(profile.id)) return false
+    this.#profiles.set(profile.id, profile)
     return true
   }
 
   /** Test seam: put a profile in place without going through insert. */
   given(profile: Profile): void {
-    this.#profiles.set(profile.userId, profile)
+    this.#profiles.set(profile.id, profile)
   }
 
   get size(): number {

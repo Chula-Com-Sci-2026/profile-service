@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import type { PaceRange } from '../domain/pace-range.ts'
-import type { PreferredRunTime } from '../domain/preferred-run-time.ts'
 import type { Profile } from '../domain/profile.ts'
 import type { PublicCard } from '../domain/public-card.ts'
 
@@ -27,60 +25,46 @@ export type CloudEvent = {
 
 const SOURCE = 'profile-service'
 
-/** `:1` is the version of `data`. A breaking change moves it to `:2`; an added optional field does not. */
-const DATASCHEMA = {
-  ProfileUpdated: 'urn:cant-run-alone:profile-service:ProfileUpdated:1',
-} as const
-
-const paceRangeJson = (range: PaceRange) => ({
-  fastest: range.fastest.secondsPerKilometre,
-  slowest: range.slowest.secondsPerKilometre,
-})
-
-const runTimesJson = (times: readonly PreferredRunTime[]) =>
-  times.map((t) => ({ dayOfWeek: t.dayOfWeek, timeOfDay: t.timeOfDay }))
-
-/** openapi.yaml `PublicCard` — visibility already applied by the domain; the area only as its cell (NFR-4.1). */
-export function card(publicCard: PublicCard): Record<string, unknown> {
-  return {
-    userId: publicCard.userId,
-    displayName: publicCard.displayName,
-    areaCell: { latitude: publicCard.areaCell.latitude, longitude: publicCard.areaCell.longitude },
-    ...(publicCard.avatarRef !== undefined && { avatarRef: publicCard.avatarRef }),
-    ...(publicCard.bio !== undefined && { bio: publicCard.bio }),
-    ...(publicCard.birthYear !== undefined && { birthYear: publicCard.birthYear }),
-    ...(publicCard.gender !== undefined && { gender: publicCard.gender }),
-    ...(publicCard.paceRange !== undefined && { paceRange: paceRangeJson(publicCard.paceRange) }),
-    ...(publicCard.usualDistance !== undefined && { usualDistance: publicCard.usualDistance.metres }),
-    ...(publicCard.experience !== undefined && { experience: publicCard.experience }),
-    ...(publicCard.preferredRunTimes !== undefined && { preferredRunTimes: runTimesJson(publicCard.preferredRunTimes) }),
-    ...(publicCard.gear !== undefined && { gear: [...publicCard.gear] }),
-  }
-}
+/** `:2` is the version of `data`. A breaking change moves it on; an added optional field does not. */
+const DATASCHEMA = 'urn:cant-run-alone:profile-service:ProfileUpdated:2'
 
 /**
- * openapi.yaml `Matching` — what Buddy Discovery ranks on (FR-4.1, FR-4.2), even when hidden
- * from other runners (the team's architecture notes). Nothing else hidden ever leaves.
+ * openapi.yaml `PublicCard` — visibility already applied by the domain, a hidden field as `null`,
+ * the point only as its cell (NFR-4.1), the photo as its public address.
  */
-export function matching(profile: Profile): Record<string, unknown> {
+export function card(publicCard: PublicCard, photoUrl: (photoRef: string) => string): Record<string, unknown> {
   return {
-    ...(profile.paceRange !== undefined && { paceRange: paceRangeJson(profile.paceRange) }),
-    ...(profile.experience !== undefined && { experience: profile.experience }),
-    preferredRunTimes: runTimesJson(profile.preferredRunTimes),
+    id: publicCard.id,
+    name: publicCard.name,
+    area: publicCard.area,
+    areaCell: { latitude: publicCard.areaCell.latitude, longitude: publicCard.areaCell.longitude },
+    photoUrl: publicCard.photoRef === null ? null : photoUrl(publicCard.photoRef),
+    bio: publicCard.bio,
+    paceMin: publicCard.paceMin,
+    paceMax: publicCard.paceMax,
+    experience: publicCard.experience,
+    availability: publicCard.availability,
+    usualDistance: publicCard.usualDistance,
+    gear: publicCard.gear === null ? null : [...publicCard.gear],
   }
 }
 
-/** A profile was created or changed. */
-export function profileUpdated(profile: Profile, at: Date = new Date(), id: string = randomUUID()): CloudEvent {
+/** A profile changed: its public card, and nothing hidden. */
+export function profileUpdated(
+  profile: Profile,
+  photoUrl: (photoRef: string) => string,
+  at: Date = new Date(),
+  id: string = randomUUID(),
+): CloudEvent {
   return {
     specversion: '1.0',
     id,
     source: SOURCE,
     type: 'ProfileUpdated',
     time: at.toISOString(),
-    subject: profile.userId,
+    subject: profile.id,
     datacontenttype: 'application/json',
-    dataschema: DATASCHEMA.ProfileUpdated,
-    data: { card: card(profile.publicCard()), matching: matching(profile) },
+    dataschema: DATASCHEMA,
+    data: { card: card(profile.publicCard(), photoUrl) },
   }
 }

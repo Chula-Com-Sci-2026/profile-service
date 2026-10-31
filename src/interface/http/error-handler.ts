@@ -2,13 +2,9 @@ import type { Context, ErrorHandler, NotFoundHandler } from 'hono'
 import type { Logger } from 'pino'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { ZodError } from 'zod'
-import {
-  InvalidProfileFieldError,
-  ProfileAlreadyExistsError,
-  ProfileNotFoundError,
-} from '../../domain/errors.ts'
+import { InvalidProfileFieldError, ProfileNotFoundError } from '../../domain/errors.ts'
 import type { Env } from './context.ts'
-import { ForbiddenError, MalformedBodyError, UnauthorizedError } from './errors.ts'
+import { MalformedBodyError, UnauthorizedError } from './errors.ts'
 import { correlationIdOf } from './request-context.ts'
 
 /**
@@ -31,23 +27,15 @@ type Failure = {
 
 /**
  * One message per field, keyed by its name in the request body — a problem inside a field is
- * keyed by the field itself (`area`, not `area.latitude`). Every malformed field at once, the
- * first message for each. An unknown field is named too; a body that is not an object names none.
+ * keyed by the field itself (`gear`, not `gear[3]`). Every malformed field at once, the first
+ * message for each. A body that is not an object names none. Unknown fields are stripped, not
+ * refused, so they never get here.
  */
 function fieldErrorsOf(error: ZodError): Record<string, string> {
   const fields: Record<string, string> = {}
-  const name = (field: string, message: string): void => {
-    if (!(field in fields)) fields[field] = message
-  }
   for (const issue of error.issues) {
-    // Only an unknown key at the top of the body is a field of its own; one inside a field (an
-    // `altitude` in `area`) is that field's problem, and falls through to be keyed by it.
-    if (issue.code === 'unrecognized_keys' && issue.path.length === 0) {
-      for (const key of issue.keys) name(key, 'is not a field this request accepts')
-      continue
-    }
     const field = issue.path[0]
-    if (typeof field === 'string') name(field, issue.message)
+    if (typeof field === 'string' && !(field in fields)) fields[field] = issue.message
   }
   return fields
 }
@@ -72,14 +60,8 @@ function failureFor(error: Error): Failure | undefined {
   if (error instanceof UnauthorizedError) {
     return { status: 401, code: 'unauthorized', message: error.message }
   }
-  if (error instanceof ForbiddenError) {
-    return { status: 403, code: 'forbidden', message: error.message }
-  }
   if (error instanceof ProfileNotFoundError) {
     return { status: 404, code: 'profile_not_found', message: error.message }
-  }
-  if (error instanceof ProfileAlreadyExistsError) {
-    return { status: 409, code: 'profile_already_exists', message: error.message }
   }
   return undefined
 }

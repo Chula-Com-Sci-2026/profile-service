@@ -8,5 +8,5 @@ import type { ProfileEvents } from './ports/profile-events.ts'
  */
 export type Publishing = {
   events: ProfileEvents
-  onUndelivered: (userId: string, error: unknown) => void
+  onUndelivered: (id: string, error: unknown) => void
 }

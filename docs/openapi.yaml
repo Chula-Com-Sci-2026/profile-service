@@ -4,136 +4,85 @@ info:
   title: Profile Service
   version: 1.0.0
   description: |
-    Creating and changing a profile is one resource. The avatar is a two-step handshake,
-    because the image lives in object storage rather than here.
+    A runner's own profile is one resource, `/api/v1/me/profile`: "me" is the subject of the
+    caller's token, so a runner reads the whole of, and changes, only their own. A save is a PUT
+    that creates the profile or replaces it. Which fields other runners see is its own
+    operation, and so is the photo — a three-step handshake, because the image lives in object
+    storage rather than here.
 
-    Identity assigns the `userId`, so a client knows the URI before the profile exists —
-    which is why creation is a `PUT`, not a `POST` to a collection. There is no
-    collection: profiles cannot be listed or searched.
+    Anyone's public card is `/api/v1/runners/{id}`: the fields its owner has not hidden, the area
+    only as its cell. Every key of a card, and of the owner's view, is always present; a field
+    that is hidden or unset is `null`.
 
     It also sends an event to the services that subscribe, `ProfileUpdated`, described under
     `webhooks`.
 
-    Other runners see a profile's public card: the fields its owner has not hidden
-    (`hiddenFields`), the area only as its cell. The owner sees everything.
-
-    Text fields are trimmed before their length rules apply, so whitespace alone counts
-    as empty.
+    Text fields are trimmed before their length rules apply, so whitespace alone counts as
+    empty. A request body's unknown fields are ignored, not refused.
 
 security:
   - bearerAuth: []
 
 paths:
-  /v1/profiles/{userId}:
+  /api/v1/me/profile:
     parameters:
-      - name: userId
-        in: path
-        required: true
-        description: >-
-          The Identity Service's id for a runner: a UUID, which a token's subject gives in
-          lowercase. Only the caller's own id can be written, so any other value answers 403 on
-          create, change and delete. On read, a value that is no runner's simply matches no
-          profile and answers 404.
-        schema: { type: string, minLength: 1, maxLength: 64 }
       - $ref: '#/components/parameters/CorrelationId'
 
+    get:
+      operationId: getProfile
+      summary: Read your own profile, whole
+      description: >-
+        The whole profile — the exact point, the hidden set and the photo's key included.
+      responses:
+        '200': { $ref: '#/components/responses/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # you have not saved one yet
+        default: { $ref: '#/components/responses/InternalError' }
+
     put:
-      operationId: createProfile
-      summary: Create a runner's profile
-      description: Create only. The server answers 409 if a profile already exists — one profile per runner. Use PATCH to change one.
+      operationId: saveProfile
+      summary: Save your profile — create it, or replace it
+      description: >-
+        Creates the profile on the first save and replaces it on every later one, answering 200
+        either way. The runner's answers are replaced whole; `usualDistance` and `gear` are kept
+        when left out. A save never changes the hidden set or the photo. See `ProfileSave`.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProfileWrite' }
+            schema: { $ref: '#/components/schemas/ProfileSave' }
       responses:
-        '201': { $ref: '#/components/responses/Profile' }
+        '200': { $ref: '#/components/responses/Profile' }   # every time, created or replaced
         '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
-        '403': { $ref: '#/components/responses/Forbidden' }   # a runner may only create their own profile
-        '409': { $ref: '#/components/responses/ProfileAlreadyExists' }   # a profile already exists
         '422': { $ref: '#/components/responses/ValidationFailed' }   # malformed, the wrong shape, or a value that breaks a rule in domain.md §4
         default: { $ref: '#/components/responses/InternalError' }
 
-    get:
-      operationId: getProfile
-      summary: Read a runner's profile
-      description: >-
-        Any runner may read any profile. Its owner receives the whole of it — the exact `area`
-        and `hiddenFields` included; anyone else receives its public card.
-      responses:
-        '200':
-          description: The whole profile for its owner; the public card for anyone else
-          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: '#/components/schemas/Profile'
-                  - $ref: '#/components/schemas/PublicCard'
-        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
-        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
-        default: { $ref: '#/components/responses/InternalError' }
-
-    patch:
-      operationId: updateProfile
-      summary: Change a runner's profile
-      description: RFC 7396 merge patch. `userId` never changes.
-      requestBody:
-        required: true
-        content:
-          application/merge-patch+json:
-            schema: { $ref: '#/components/schemas/ProfilePatch' }
-      responses:
-        '200': { $ref: '#/components/responses/Profile' }
-        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
-        '403': { $ref: '#/components/responses/Forbidden' }   # only the owner may change a profile
-        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
-        '422': { $ref: '#/components/responses/ValidationFailed' }   # malformed, the wrong shape, or a value that breaks a rule in domain.md §4
-        default: { $ref: '#/components/responses/InternalError' }
-
-  /v1/profiles/{userId}/avatar-uploads:
+  /api/v1/runners/{id}:
     parameters:
-      - name: userId
+      - name: id
         in: path
         required: true
-        schema: { type: string, minLength: 1, maxLength: 64 }
+        description: >-
+          A runner's id. Compared in lowercase; a value that is not a UUID matches nobody, so it
+          answers 404.
+        schema: { type: string }
       - $ref: '#/components/parameters/CorrelationId'
 
-    post:
-      operationId: createAvatarUpload
-      summary: Create an upload for a new avatar
+    get:
+      operationId: getPublicProfile
+      summary: A runner's public card — the owner's too
       description: >-
-        Creates an upload: a short-lived URL the client PUTs the image to directly, and the key
-        that upload will occupy. The resource is the *permission*, not the avatar — which is why
-        the path is `avatar-uploads` and why nothing here accepts image bytes. The service never
-        handles them; it is an API, not a file server.
-
-        It does not change the profile. Once the upload succeeds, PATCH `avatarRef` with the key
-        returned here; until then the profile is untouched, so a failed upload leaves nothing
-        pointing at an object that does not exist. Setting the field is `updateProfile`'s job and
-        stays that way.
+        What other runners see of a profile. Its owner gets exactly the same card here, so they
+        can see what others see; their whole profile is `/api/v1/me/profile`.
       responses:
-        '201':
-          description: An upload is authorised
+        '200':
+          description: The public card
           headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [uploadUrl, avatarRef, expiresInSeconds]
-                properties:
-                  uploadUrl:
-                    type: string
-                    description: PUT the image here. Expires — ask again rather than storing it.
-                  avatarRef:
-                    type: string
-                    maxLength: 128
-                    description: The key the upload will occupy. Send it back as `avatarRef`.
-                  expiresInSeconds: { type: integer, minimum: 1 }
+              schema: { $ref: '#/components/schemas/PublicCard' }
         '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
-        '403': { $ref: '#/components/responses/Forbidden' }   # a runner may only upload their own
-        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that id
         default: { $ref: '#/components/responses/InternalError' }
 
   /up:
@@ -235,16 +184,17 @@ paths:
 webhooks:
   ProfileUpdated:
     post:
-      summary: A profile was created or changed
+      summary: A profile changed
       description: >-
-        Sent to every subscriber listed in this service's configuration (ADR-0019) after the
-        change is saved, and awaited — a synchronous call, not a broker. `data.card` is the runner's
-        public card — visibility applied, the area only as its cell — and `data.matching` the
-        fields Buddy Discovery matches on, even when hidden. Each attempt has a 1 s timeout; three
-        attempts, retried on a network error, a timeout, 408, 429 or 5xx, not on any other 4xx.
-        A subscriber still down after them loses the event (ADR-0019). Deduplicate by `id`. Order
+        Sent to every subscriber listed in this service's configuration (ADR-0019) after every
+        change is saved — a save, a visibility change, a photo attached or removed — and awaited:
+        a synchronous call, not a broker. `data.card` is the runner's public card, exactly as
+        `getPublicProfile` answers it: visibility applied, a hidden field as `null`, the area only
+        as its cell. Nothing hidden is sent. Each attempt has a 1 s timeout; three attempts,
+        retried on a network error, a timeout, 408, 429 or 5xx, not on any other 4xx. A
+        subscriber still down after them loses the event (ADR-0019). Deduplicate by `id`. Order
         by `time` per `subject`. Equal times are applied in arrival order. A breaking change to
-        `data` moves `dataschema` to `:2`; an added optional field does not.
+        `data` moves `dataschema` to the next number; an added optional field does not.
       security:
         - serviceToken: []
       parameters:
@@ -272,10 +222,9 @@ components:
         trusted because a gateway forwarded it. HS256, signed with the secret every service
         shares (ADR-0022); `iss` and `aud` must be the configured issuer and audience, `exp`,
         `iss`, `aud` and `sub` must be present, and `sub` must be a UUID. Anything else is 401.
-        The subject, lowercased, is the caller's `userId`, and the 403 responses below compare it
-        against the `userId` in the path. The same comparison decides whether a profile is
-        returned whole, exact `area` and `hiddenFields` included, or as its public card.
-        Ownership is an access rule of this contract; domain.md is silent on who may act.
+        The subject, lowercased, is the caller — "me" in every `/api/v1/me` path — so a runner
+        acts only on their own profile, and there is no ownership check and no 403. Who may act
+        is an access rule of this contract; domain.md is silent on it.
 
     serviceToken:
       type: http
@@ -288,7 +237,7 @@ components:
 
   responses:
     Profile:
-      description: The profile
+      description: The caller's whole profile
       headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
       content:
         application/json:
@@ -303,15 +252,6 @@ components:
             allOf: [{ $ref: '#/components/schemas/ApiError' }]
             properties: { code: { const: unauthorized }, fieldErrors: false }
 
-    Forbidden:
-      description: A runner may only write their own profile
-      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
-      content:
-        application/json:
-          schema:
-            allOf: [{ $ref: '#/components/schemas/ApiError' }]
-            properties: { code: { const: forbidden }, fieldErrors: false }
-
     ProfileNotFound:
       description: No profile for that runner
       headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
@@ -320,15 +260,6 @@ components:
           schema:
             allOf: [{ $ref: '#/components/schemas/ApiError' }]
             properties: { code: { const: profile_not_found }, fieldErrors: false }
-
-    ProfileAlreadyExists:
-      description: The runner already has a profile — one per runner
-      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
-      content:
-        application/json:
-          schema:
-            allOf: [{ $ref: '#/components/schemas/ApiError' }]
-            properties: { code: { const: profile_already_exists }, fieldErrors: false }
 
     ValidationFailed:
       description: The body is malformed, has the wrong shape or misses a required field, or a value breaks a rule in domain.md §4
@@ -368,125 +299,182 @@ components:
       schema: { type: string }
 
   schemas:
-    ProfileFields:
-      type: object
+    Id:
+      type: string
+      # A pattern rather than `format: uuid`, which the contract tests' Ajv ignores.
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
       description: >-
-        The writable fields. An unset scalar is absent, never null; an unset set is empty.
-      properties:
-        displayName:   { type: string, minLength: 1, maxLength: 50 }
-        bio:           { type: string, maxLength: 500 }
-        avatarRef:     { type: string, maxLength: 128, description: A key to the image in this service's object storage. Storage is not implemented yet. }
-        birthYear:     { type: integer, minimum: 1900, description: Not later than the current year. }
-        gender:        { $ref: '#/components/schemas/Gender' }
-        area:          { $ref: '#/components/schemas/Area' }
-        paceRange:     { $ref: '#/components/schemas/PaceRange' }
-        usualDistance: { type: integer, minimum: 1, maximum: 50000, description: Metres, for one usual run. }
-        experience:    { $ref: '#/components/schemas/Experience' }
-        preferredRunTimes:
-          type: array
-          uniqueItems: true
-          items: { $ref: '#/components/schemas/RunTime' }
-        gear:
-          type: array
-          uniqueItems: true
-          maxItems: 10
-          description: >-
-            What a runner runs with, such as shoes or a watch, in the runner's order. Items are
-            trimmed; one equal to an earlier one once trimmed is the same item, and the limit of
-            10 counts items after that, so a request may repeat one in different spacing.
-          items: { type: string, minLength: 1, maxLength: 50 }
-        hiddenFields:
-          type: array
-          uniqueItems: true
-          description: >-
-            Fields left off the public card. Empty unless the runner hides something —
-            everything is public until hidden. The owner still sees every field.
-          items: { $ref: '#/components/schemas/HideableField' }
+        A runner's id: Identity's id for them, the subject of their access token. A UUID, in
+        lowercase.
 
-    Profile:
+    Name:
+      type: string
+      minLength: 1
+      maxLength: 80
+      description: A runner's name, as shown to others. 1–80 characters after trimming.
+
+    Bio:
+      type: string
+      maxLength: 240
+      description: What a runner writes about themselves. Up to 240 characters after trimming; a blank bio is no bio.
+
+    Pace:
+      type: number
+      exclusiveMinimum: 0
+      maximum: 20
       description: >-
-        The owner's view: every field, the exact `area`, its `areaCell` and `hiddenFields`.
-        `required` here means present on the wire, not that the runner had to answer — see
-        `ProfileWrite` for what a client must send. `areaCell` is not writable.
-      allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
-      required: [userId, displayName, area, areaCell, preferredRunTimes, gear, hiddenFields]
-      unevaluatedProperties: false
-      properties:
-        userId:   { type: string, minLength: 1, maxLength: 64 }
-        areaCell: { $ref: '#/components/schemas/AreaCell' }
+        Decimal minutes per kilometre, kept to the nearest second: 6:20 /km is
+        6.333333333333333. A value is rounded on the way in — round(x × 60) / 60 — and one that
+        rounds to 0 is refused. `paceMin` is the faster end, so it is not more than `paceMax`, a
+        rule JSON Schema cannot state: breaking it answers 422.
 
-    ProfilePatch:
-      description: >-
-        A merge patch (RFC 7396). An absent key is untouched; null clears the field.
-        `displayName` and `area` cannot be cleared — a profile cannot exist without them.
-        A set is replaced by sending a new array, never by sending null. An area and a pace
-        range are each replaced whole, rather than merged member by member as RFC 7396 would:
-        half a moved pin or half a range means nothing.
-      type: object
-      unevaluatedProperties: false
-      properties:
-        displayName:   { $ref: '#/components/schemas/ProfileFields/properties/displayName' }
-        bio:           { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/bio' },           { type: 'null' }] }
-        avatarRef:     { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/avatarRef' },     { type: 'null' }] }
-        birthYear:     { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/birthYear' },     { type: 'null' }] }
-        gender:        { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/gender' },        { type: 'null' }] }
-        area:          { $ref: '#/components/schemas/ProfileFields/properties/area' }
-        paceRange:     { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/paceRange' },     { type: 'null' }] }
-        usualDistance: { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/usualDistance' }, { type: 'null' }] }
-        experience:    { oneOf: [{ $ref: '#/components/schemas/ProfileFields/properties/experience' },    { type: 'null' }] }
-        preferredRunTimes: { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }
-        gear:              { $ref: '#/components/schemas/ProfileFields/properties/gear' }
-        hiddenFields:      { $ref: '#/components/schemas/ProfileFields/properties/hiddenFields' }
-
-    ProfileWrite:
-      description: No `userId` in the body — it is the path parameter.
-      allOf: [{ $ref: '#/components/schemas/ProfileFields' }]
-      required: [displayName, area]
-      unevaluatedProperties: false
-
-    Gender:     { type: string, enum: [male, female, non_binary] }
-    Experience: { type: string, enum: [beginner, intermediate, advanced] }
-    HideableField: { type: string, enum: [bio, birthYear, gender, paceRange, usualDistance, experience, preferredRunTimes, gear] }
+    Experience:
+      type: string
+      enum: [Beginner, Intermediate, Advanced]
+      description: How new or experienced a runner is, in exactly this case.
 
     Area:
+      type: string
+      minLength: 1
+      maxLength: 100
+      description: >-
+        The name of the place a runner usually runs, such as "Lumphini area". Shown to everyone.
+        1–100 characters after trimming.
+
+    Latitude:  { type: number, minimum: -90,  maximum: 90,  description: Degrees, WGS 84. }
+    Longitude: { type: number, minimum: -180, maximum: 180, description: Degrees, WGS 84. }
+
+    Availability:
+      type: string
+      minLength: 1
+      maxLength: 120
+      description: >-
+        When a runner usually runs, in their own words, such as "Tue & Thu 18:00–20:00".
+        1–120 characters after trimming.
+
+    UsualDistance:
+      type: string
+      enum: ['Under 5 km', '5–10 km', 'Over 10 km']
+      description: >-
+        How far a runner usually runs in one run. The dash in "5–10 km" is an en dash (U+2013);
+        "5-10 km" with a hyphen is refused, and the refusal names the three.
+
+    Gear:
+      type: array
+      uniqueItems: true
+      maxItems: 10
+      description: >-
+        What a runner runs with, such as shoes or a watch, in the runner's order. Items are
+        trimmed; one equal to an earlier one once trimmed is the same item, and the limit of
+        10 counts items after that, so a request may repeat one in different spacing.
+      items: { type: string, minLength: 1, maxLength: 50 }
+
+    PhotoRef:
+      type: string
+      maxLength: 128
+      description: The photo's key in this service's object storage, `photos/{id}/{uuid}`.
+
+    PhotoUrl:
+      type: string
+      pattern: '^https?://'
+      description: >-
+        The photo's public address: the storage endpoint browsers use, the bucket, then the key.
+        Load it in an `<img>`; it needs no token.
+
+    HideableField:
+      type: string
+      enum: [bio, pace, availability, experience, usualDistance, gear]
+      description: >-
+        A field a runner may leave off their public card. `pace` hides `paceMin` and `paceMax`
+        together. `id`, `name`, `area`, the area cell and the photo are always shown.
+
+    AreaCell:
       type: object
-      description: Where a runner usually runs. Degrees, WGS 84.
+      description: >-
+        The point as other runners see it: the point nearest it whose coordinates are multiples
+        of 0.01° (about 1.1 km across in Bangkok). Worked out, never stored or written.
       additionalProperties: false
       required: [latitude, longitude]
       properties:
-        latitude:  { type: number, minimum: -90,  maximum: 90 }
-        longitude: { type: number, minimum: -180, maximum: 180 }
+        latitude:  { $ref: '#/components/schemas/Latitude' }
+        longitude: { $ref: '#/components/schemas/Longitude' }
 
-    PaceRange:
+    ProfileSave:
       type: object
       description: >-
-        Seconds per kilometre, 150–900 each (2:30–15:00 /km). `fastest` is not slower than
-        `slowest` — a rule JSON Schema cannot state, so breaking it answers 422. One steady
-        pace gives both the same value.
-      additionalProperties: false
-      required: [fastest, slowest]
+        What a save carries. The runner's answers — `name`, the pace, `experience`, `area`, the
+        point and `availability` — are required and replace what was there, and a `bio` left
+        out or `null` is no bio. `usualDistance` and `gear` are kept when left out and cleared
+        with `null` (gear with `[]` too). Unknown fields are ignored, not refused — `id`,
+        `areaCell`, `hiddenFields`, `photoRef` and `photoUrl` among them, which a save cannot
+        write — so the owner's view can be sent back as it came.
+      required: [name, paceMin, paceMax, experience, area, latitude, longitude, availability]
       properties:
-        fastest: { type: integer, minimum: 150, maximum: 900 }
-        slowest: { type: integer, minimum: 150, maximum: 900 }
+        name:          { $ref: '#/components/schemas/Name' }
+        bio:           { anyOf: [{ $ref: '#/components/schemas/Bio' }, { type: 'null' }] }
+        paceMin:       { $ref: '#/components/schemas/Pace' }
+        paceMax:       { $ref: '#/components/schemas/Pace' }
+        experience:    { $ref: '#/components/schemas/Experience' }
+        area:          { $ref: '#/components/schemas/Area' }
+        latitude:      { $ref: '#/components/schemas/Latitude' }
+        longitude:     { $ref: '#/components/schemas/Longitude' }
+        availability:  { $ref: '#/components/schemas/Availability' }
+        usualDistance: { anyOf: [{ $ref: '#/components/schemas/UsualDistance' }, { type: 'null' }] }
+        gear:          { anyOf: [{ $ref: '#/components/schemas/Gear' }, { type: 'null' }] }
 
-    AreaCell:
-      description: >-
-        The area as other runners see it: the point nearest it whose coordinates are
-        multiples of 0.01° (about 1.1 km across in Bangkok).
-      allOf: [{ $ref: '#/components/schemas/Area' }]
-
-    RunTime:
+    Profile:
       type: object
+      description: >-
+        The owner's view: every field, the exact point, its cell, the photo and the hidden set.
+        Every key is always present; an unset field is `null` — gear with no items included,
+        never `[]` — and `hiddenFields` is always a list.
       additionalProperties: false
-      required: [dayOfWeek, timeOfDay]
+      required: [id, name, bio, paceMin, paceMax, experience, area, latitude, longitude, areaCell, availability, usualDistance, gear, photoRef, photoUrl, hiddenFields]
       properties:
-        dayOfWeek: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] }
-        timeOfDay:
-          type: string
-          enum: [early_morning, morning, midday, afternoon, evening, night]
-          description: >-
-            Bangkok local time (UTC+7). early_morning 05:00–08:00 · morning 08:00–11:00 ·
-            midday 11:00–14:00 · afternoon 14:00–17:00 · evening 17:00–20:00 · night 20:00–05:00
+        id:            { $ref: '#/components/schemas/Id' }
+        name:          { $ref: '#/components/schemas/Name' }
+        bio:           { anyOf: [{ $ref: '#/components/schemas/Bio' }, { type: 'null' }] }
+        paceMin:       { $ref: '#/components/schemas/Pace' }
+        paceMax:       { $ref: '#/components/schemas/Pace' }
+        experience:    { $ref: '#/components/schemas/Experience' }
+        area:          { $ref: '#/components/schemas/Area' }
+        latitude:      { $ref: '#/components/schemas/Latitude' }
+        longitude:     { $ref: '#/components/schemas/Longitude' }
+        areaCell:      { $ref: '#/components/schemas/AreaCell' }
+        availability:  { $ref: '#/components/schemas/Availability' }
+        usualDistance: { anyOf: [{ $ref: '#/components/schemas/UsualDistance' }, { type: 'null' }] }
+        gear:          { anyOf: [{ $ref: '#/components/schemas/Gear', minItems: 1 }, { type: 'null' }] }
+        photoRef:      { anyOf: [{ $ref: '#/components/schemas/PhotoRef' }, { type: 'null' }] }
+        photoUrl:      { anyOf: [{ $ref: '#/components/schemas/PhotoUrl' }, { type: 'null' }] }
+        hiddenFields:
+          type: array
+          uniqueItems: true
+          description: Fields left off the public card, in declared order. Empty unless the runner hides something.
+          items: { $ref: '#/components/schemas/HideableField' }
+
+    PublicCard:
+      type: object
+      description: >-
+        A profile as other runners see it — the team's "public card", and the card
+        `ProfileUpdated` carries. Every key is always present: a field that is hidden or unset
+        is `null`, gear included, never `[]`. `id`, `name`, `area` and `areaCell` are never
+        `null`; `photoUrl` is `null` without a photo. The exact point and the hidden set are
+        never here.
+      additionalProperties: false
+      required: [id, name, area, areaCell, photoUrl, bio, paceMin, paceMax, experience, availability, usualDistance, gear]
+      properties:
+        id:            { $ref: '#/components/schemas/Id' }
+        name:          { $ref: '#/components/schemas/Name' }
+        area:          { $ref: '#/components/schemas/Area' }
+        areaCell:      { $ref: '#/components/schemas/AreaCell' }
+        photoUrl:      { anyOf: [{ $ref: '#/components/schemas/PhotoUrl' }, { type: 'null' }] }
+        bio:           { anyOf: [{ $ref: '#/components/schemas/Bio' }, { type: 'null' }] }
+        paceMin:       { anyOf: [{ $ref: '#/components/schemas/Pace' }, { type: 'null' }] }
+        paceMax:       { anyOf: [{ $ref: '#/components/schemas/Pace' }, { type: 'null' }] }
+        experience:    { anyOf: [{ $ref: '#/components/schemas/Experience' }, { type: 'null' }] }
+        availability:  { anyOf: [{ $ref: '#/components/schemas/Availability' }, { type: 'null' }] }
+        usualDistance: { anyOf: [{ $ref: '#/components/schemas/UsualDistance' }, { type: 'null' }] }
+        gear:          { anyOf: [{ $ref: '#/components/schemas/Gear', minItems: 1 }, { type: 'null' }] }
 
     CorrelationId:
       type: string
@@ -505,9 +493,8 @@ components:
         code:
           type: string
           description: >-
-            Stable, lowercase snake_case: unauthorized (401), forbidden (403), profile_not_found
-            (404), not_found (404, no such route), profile_already_exists (409),
-            validation_failed (422), internal_error (500).
+            Stable, lowercase snake_case: unauthorized (401), profile_not_found (404), not_found
+            (404, no such route), validation_failed (422), internal_error (500).
         message: { type: string, description: 'Human prose, for people. Do not parse.' }
         correlationId: { $ref: '#/components/schemas/CorrelationId' }
         fieldErrors:
@@ -515,8 +502,8 @@ components:
           additionalProperties: { type: string }
           description: >-
             On a 422, when a field can be named: one message per field, keyed by its name in the
-            request body. A problem inside a field is keyed by the field itself (`area`, not
-            `area.latitude`). Every malformed field is named at once; of the rules in domain.md §4,
+            request body. A problem inside a field is keyed by the field itself (`gear`, not
+            `gear[3]`). Every malformed field is named at once; of the rules in domain.md §4,
             the first one broken.
 
     CloudEvent:
@@ -535,7 +522,7 @@ components:
           # A pattern rather than `format: date-time`, which the contract tests' Ajv ignores.
           pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$'
           description: When the change was saved. RFC 3339, UTC, e.g. 2026-10-04T11:20:00.000Z.
-        subject:         { type: string, minLength: 1, maxLength: 64, description: The runner's userId. }
+        subject:         { $ref: '#/components/schemas/Id' }
         datacontenttype: { const: application/json }
         dataschema:      { type: string, minLength: 1, description: Names the shape of `data` and its version. }
 
@@ -545,48 +532,10 @@ components:
       unevaluatedProperties: false
       properties:
         type:       { const: ProfileUpdated }
-        dataschema: { const: 'urn:cant-run-alone:profile-service:ProfileUpdated:1' }
+        dataschema: { const: 'urn:cant-run-alone:profile-service:ProfileUpdated:2' }
         data:
           type: object
           additionalProperties: false
-          required: [card, matching]
+          required: [card]
           properties:
-            card:     { $ref: '#/components/schemas/PublicCard' }
-            matching: { $ref: '#/components/schemas/Matching' }
-
-    PublicCard:
-      type: object
-      description: >-
-        A profile as other runners see it — the team's "public card". `userId`, `displayName`,
-        `areaCell` and, when set, `avatarRef` are always here; every other field is here unless
-        hidden — a scalar when set, a set always (`[]` when empty). A hidden field is absent,
-        never null. The exact area and the
-        hidden set are never here.
-      additionalProperties: false
-      required: [userId, displayName, areaCell]
-      properties:
-        userId:            { type: string, minLength: 1, maxLength: 64 }
-        displayName:       { $ref: '#/components/schemas/ProfileFields/properties/displayName' }
-        areaCell:          { $ref: '#/components/schemas/AreaCell' }
-        avatarRef:         { $ref: '#/components/schemas/ProfileFields/properties/avatarRef' }
-        bio:               { $ref: '#/components/schemas/ProfileFields/properties/bio' }
-        birthYear:         { $ref: '#/components/schemas/ProfileFields/properties/birthYear' }
-        gender:            { $ref: '#/components/schemas/ProfileFields/properties/gender' }
-        paceRange:         { $ref: '#/components/schemas/ProfileFields/properties/paceRange' }
-        usualDistance:     { $ref: '#/components/schemas/ProfileFields/properties/usualDistance' }
-        experience:        { $ref: '#/components/schemas/ProfileFields/properties/experience' }
-        preferredRunTimes: { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }
-        gear:              { $ref: '#/components/schemas/ProfileFields/properties/gear' }
-
-    Matching:
-      type: object
-      description: >-
-        The fields Buddy Discovery matches on (FR-4.1, FR-4.2), sent even when the runner hid
-        them from other runners. Rank on them; never filter on a field the card leaves out —
-        repeated searches would reveal it. Absent when unset; the set is empty when unset.
-      additionalProperties: false
-      required: [preferredRunTimes]
-      properties:
-        paceRange:         { $ref: '#/components/schemas/ProfileFields/properties/paceRange' }
-        experience:        { $ref: '#/components/schemas/ProfileFields/properties/experience' }
-        preferredRunTimes: { $ref: '#/components/schemas/ProfileFields/properties/preferredRunTimes' }
+            card: { $ref: '#/components/schemas/PublicCard' }

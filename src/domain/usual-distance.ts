@@ -1,21 +1,22 @@
-import { ensure } from './errors.ts'
+import { InvalidProfileFieldError } from './errors.ts'
 
 /**
- * How far a runner usually runs in one run — domain.md §4: integer metres, 1–50 000. The ceiling
- * is Run Scheduling's for a run's distance, `(0, 50]` km, in whole metres.
+ * How far a runner usually runs in one run — domain.md §4: the team frontend's three bands, kept
+ * as its labels. The middle one has an en dash (U+2013), not a hyphen.
  */
-export class UsualDistance {
-  readonly metres: number
+export const USUAL_DISTANCES = ['Under 5 km', '5–10 km', 'Over 10 km'] as const
 
-  constructor(metres: number) {
-    ensure(Number.isInteger(metres), 'usualDistance', 'must be a whole number of metres')
-    ensure(metres >= 1, 'usualDistance', 'must be at least 1 metre')
-    ensure(metres <= 50_000, 'usualDistance', 'must be at most 50000 metres')
-    this.metres = metres
-    Object.freeze(this)
-  }
+export type UsualDistance = (typeof USUAL_DISTANCES)[number]
 
-  equals(other: UsualDistance): boolean {
-    return this.metres === other.metres
-  }
+export function isUsualDistance(value: unknown): value is UsualDistance {
+  return typeof value === 'string' && (USUAL_DISTANCES as readonly string[]).includes(value)
+}
+
+/**
+ * Narrows a value arriving from a row or a request body. The message names the three, so a client
+ * that typed "5-10 km" with a hyphen can see what it should have sent.
+ */
+export function toUsualDistance(value: string): UsualDistance {
+  if (!isUsualDistance(value)) throw new InvalidProfileFieldError('usualDistance', `must be one of ${USUAL_DISTANCES.join(', ')}`)
+  return value
 }

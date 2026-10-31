@@ -1,188 +1,97 @@
 [
   {
-    "userId": "11111111-1111-4111-8111-111111111111",
-    "displayName": "Ray Attajak",
-    "area": {
-      "latitude": 13.7308,
-      "longitude": 100.5418
-    },
-    "experience": "intermediate",
-    "paceRange": {
-      "fastest": 360,
-      "slowest": 390
-    },
-    "preferredRunTimes": [
-      {
-        "dayOfWeek": "tue",
-        "timeOfDay": "evening"
-      },
-      {
-        "dayOfWeek": "thu",
-        "timeOfDay": "evening"
-      }
-    ]
+    "id": "11111111-1111-4111-8111-111111111111",
+    "name": "Ray Attajak",
+    "paceMin": 6,
+    "paceMax": 6.5,
+    "experience": "Intermediate",
+    "area": "Lumphini area",
+    "latitude": 13.7308,
+    "longitude": 100.5418,
+    "availability": "Tue & Thu evenings"
   },
   {
-    "userId": "22222222-2222-4222-8222-222222222222",
-    "displayName": "Mali S.",
+    "id": "22222222-2222-4222-8222-222222222222",
+    "name": "Mali S.",
     "bio": "After-work runner, coffee fan, and a very reliable pacer.",
-    "area": {
-      "latitude": 13.7317,
-      "longitude": 100.5415
-    },
-    "experience": "intermediate",
-    "paceRange": {
-      "fastest": 360,
-      "slowest": 390
-    },
-    "preferredRunTimes": [
-      {
-        "dayOfWeek": "tue",
-        "timeOfDay": "evening"
-      },
-      {
-        "dayOfWeek": "thu",
-        "timeOfDay": "evening"
-      }
-    ]
+    "paceMin": 6,
+    "paceMax": 6.5,
+    "experience": "Intermediate",
+    "area": "Lumphini area",
+    "latitude": 13.7317,
+    "longitude": 100.5415,
+    "availability": "Tue & Thu · 18:30"
   },
   {
-    "userId": "33333333-3333-4333-8333-333333333333",
-    "displayName": "Nok",
-    "birthYear": 1998,
-    "area": {
-      "latitude": 13.729,
-      "longitude": 100.559
-    },
-    "experience": "beginner",
-    "paceRange": {
-      "fastest": 420,
-      "slowest": 480
-    },
-    "preferredRunTimes": [
-      {
-        "dayOfWeek": "sat",
-        "timeOfDay": "early_morning"
-      }
-    ]
+    "id": "33333333-3333-4333-8333-333333333333",
+    "name": "Nok",
+    "paceMin": 7,
+    "paceMax": 8,
+    "experience": "Beginner",
+    "area": "Benjakitti Park",
+    "latitude": 13.729,
+    "longitude": 100.559,
+    "availability": "Sat early mornings"
   },
   {
-    "userId": "44444444-4444-4444-8444-444444444444",
-    "displayName": "Beam",
-    "birthYear": 1994,
+    "id": "44444444-4444-4444-8444-444444444444",
+    "name": "Beam",
     "bio": "Slow miles, long talks. Usually at the park before work.",
-    "gender": "non_binary",
-    "area": {
-      "latitude": 13.7314,
-      "longitude": 100.5414
-    },
-    "experience": "intermediate",
-    "paceRange": {
-      "fastest": 320,
-      "slowest": 345
-    },
-    "usualDistance": 10000,
-    "preferredRunTimes": [
-      {
-        "dayOfWeek": "tue",
-        "timeOfDay": "early_morning"
-      },
-      {
-        "dayOfWeek": "thu",
-        "timeOfDay": "early_morning"
-      },
-      {
-        "dayOfWeek": "sat",
-        "timeOfDay": "morning"
-      }
-    ],
+    "paceMin": 5.333333333333333,
+    "paceMax": 5.75,
+    "experience": "Intermediate",
+    "area": "Lumphini Park",
+    "latitude": 13.7314,
+    "longitude": 100.5414,
+    "availability": "Tue & Thu early mornings, Sat mornings",
+    "usualDistance": "5–10 km",
     "gear": [
       "Nike Pegasus 41",
       "Garmin Forerunner 165"
     ]
   },
   {
-    "userId": "55555555-5555-4555-8555-555555555555",
-    "displayName": "Ploy",
-    "birthYear": 1991,
-    "gender": "female",
-    "area": {
-      "latitude": 13.729,
-      "longitude": 100.559
-    },
-    "experience": "advanced",
-    "paceRange": {
-      "fastest": 240,
-      "slowest": 260
-    },
-    "usualDistance": 21000,
-    "preferredRunTimes": [
-      {
-        "dayOfWeek": "sun",
-        "timeOfDay": "early_morning"
-      }
-    ],
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "Ploy",
+    "paceMin": 4,
+    "paceMax": 4.333333333333333,
+    "experience": "Advanced",
+    "area": "Benjakitti Park",
+    "latitude": 13.729,
+    "longitude": 100.559,
+    "availability": "Sun early mornings",
+    "usualDistance": "Over 10 km",
     "gear": [
       "Nike Vaporfly 3",
       "COROS Pace 3"
-    ],
-    "hiddenFields": [
-      "birthYear",
-      "gender"
     ]
   },
   {
-    "userId": "66666666-6666-4666-8666-666666666666",
-    "displayName": "Bank",
-    "birthYear": 2003,
-    "gender": "male",
-    "area": {
-      "latitude": 13.803,
-      "longitude": 100.553
-    },
-    "experience": "beginner",
-    "paceRange": {
-      "fastest": 570,
-      "slowest": 630
-    },
-    "usualDistance": 5000,
-    "preferredRunTimes": [
-      {
-        "dayOfWeek": "mon",
-        "timeOfDay": "evening"
-      },
-      {
-        "dayOfWeek": "wed",
-        "timeOfDay": "evening"
-      }
-    ],
+    "id": "66666666-6666-4666-8666-666666666666",
+    "name": "Bank",
+    "paceMin": 9.5,
+    "paceMax": 10.5,
+    "experience": "Beginner",
+    "area": "Chatuchak Park",
+    "latitude": 13.803,
+    "longitude": 100.553,
+    "availability": "Mon & Wed evenings",
+    "usualDistance": "5–10 km",
     "gear": [
       "ASICS Gel-Contend 9"
     ]
   },
   {
-    "userId": "77777777-7777-4777-8777-777777777777",
-    "displayName": "Ann",
+    "id": "77777777-7777-4777-8777-777777777777",
+    "name": "Ann",
     "bio": "Night owl. Happy to pace anyone.",
-    "area": {
-      "latitude": 13.7314,
-      "longitude": 100.5414
-    },
-    "experience": "advanced",
-    "paceRange": {
-      "fastest": 300,
-      "slowest": 300
-    },
-    "usualDistance": 12000,
-    "preferredRunTimes": [
-      {
-        "dayOfWeek": "tue",
-        "timeOfDay": "night"
-      },
-      {
-        "dayOfWeek": "fri",
-        "timeOfDay": "night"
-      }
-    ]
+    "paceMin": 5,
+    "paceMax": 5,
+    "experience": "Advanced",
+    "area": "Lumphini Park",
+    "latitude": 13.7314,
+    "longitude": 100.5414,
+    "availability": "Tue & Fri nights",
+    "usualDistance": "Over 10 km"
   }
 ]

@@ -1,25 +1,22 @@
 import { type Context, Hono } from 'hono'
 import type { Logger } from 'pino'
-import type { CreateAvatarUpload } from '../../application/create-avatar-upload.ts'
-import type { CreateProfile } from '../../application/create-profile.ts'
 import type { GetProfile } from '../../application/get-profile.ts'
-import type { UpdateProfile } from '../../application/update-profile.ts'
+import type { GetPublicProfile } from '../../application/get-public-profile.ts'
+import type { SaveProfile } from '../../application/save-profile.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
 import type { Env } from './context.ts'
 import { contractDocument, documentationAsset, documentationPage } from './docs.ts'
 import { errorHandler, notFoundHandler } from './error-handler.ts'
 import { MalformedBodyError } from './errors.ts'
-import { isOwner, ownsTheProfile } from './ownership.ts'
-import { toChanges, toFields } from './profile-input.ts'
-import { toView } from './profile-view.ts'
+import { toContent } from './profile-input.ts'
+import { cardView, ownerView, type PhotoUrl } from './profile-view.ts'
 import { requestContext } from './request-context.ts'
-import { profilePatch, profileWrite } from './validators.ts'
+import { profileSave } from './validators.ts'
 
 export type UseCases = {
-  createProfile: CreateProfile
+  saveProfile: SaveProfile
   getProfile: GetProfile
-  updateProfile: UpdateProfile
-  createAvatarUpload: CreateAvatarUpload
+  getPublicProfile: GetPublicProfile
 }
 
 /**
@@ -35,9 +32,12 @@ export type AppOptions = {
   logger: Logger
   authentication: AuthenticationOptions
   readiness: Readiness
+  /** A photo's public address, from its key — the domain never sees it (domain.md §2 "Photo"). */
+  photoUrl: PhotoUrl
 }
 
-const PROFILE = '/v1/profiles/:userId'
+/** The caller's own profile: "me" is the token's subject, so there is nobody else's to reach. */
+const ME = '/api/v1/me/profile'
 
 /**
  * Parse failures are raised where they happen. Matching `instanceof SyntaxError` in the error
@@ -57,16 +57,16 @@ async function jsonBody(c: Context<Env>): Promise<unknown> {
  *
  * Order is error handler outermost, then request context, then auth, then routes — the only
  * arrangement in which the error handler can catch what the others throw. Auth is mounted on
- * `/v1/*`, not globally, so `/up` never reaches it: that mirrors the contract, where
+ * `/api/v1/*`, not globally, so `/up` never reaches it: that mirrors the contract, where
  * `/up` carries `security: []`.
  */
-export function createApp({ useCases, logger, authentication: auth, readiness }: AppOptions): Hono<Env> {
+export function createApp({ useCases, logger, authentication: auth, readiness, photoUrl }: AppOptions): Hono<Env> {
   const app = new Hono<Env>()
 
   app.onError(errorHandler(logger))
   app.notFound(notFoundHandler)
   app.use('*', requestContext(logger))
-  app.use('/v1/*', authentication(auth))
+  app.use('/api/v1/*', authentication(auth))
 
   // Liveness: is the process wedged? It must keep answering 200 while draining, because the
   // orchestrator's answer to a failing liveness probe is to restart — the wrong response to a
@@ -89,29 +89,20 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
   app.get('/docs/:asset', documentationAsset)
   app.get('/openapi.yaml', contractDocument())
 
-  app.put(PROFILE, ownsTheProfile(), async (c) => {
-    const body = profileWrite.parse(await jsonBody(c))
-    const profile = await useCases.createProfile(toFields(c.req.param('userId'), body))
-    return c.json(toView(profile, 'owner'), 201)
+  app.get(ME, async (c) => {
+    return c.json(ownerView(await useCases.getProfile(c.get('caller').id), photoUrl))
   })
 
-  // Reading is open to any runner; what they see is not.
-  app.get(PROFILE, async (c) => {
-    const profile = await useCases.getProfile(c.req.param('userId'))
-    return c.json(toView(profile, isOwner(c) ? 'owner' : 'others'))
+  // Creates or replaces, and answers 200 either way: the client cannot tell, and need not.
+  app.put(ME, async (c) => {
+    const body = profileSave.parse(await jsonBody(c))
+    return c.json(ownerView(await useCases.saveProfile(c.get('caller').id, toContent(body)), photoUrl))
   })
 
-  app.patch(PROFILE, ownsTheProfile(), async (c) => {
-    const body = profilePatch.parse(await jsonBody(c))
-    const profile = await useCases.updateProfile(c.req.param('userId'), toChanges(body))
-    return c.json(toView(profile, 'owner'))
-  })
-
-  // The resource created here is the *permission*, not the avatar — which is why the path is
-  // avatar-uploads and why nothing here accepts image bytes. The runner PATCHes `avatarRef`
-  // once the upload succeeds, so a failed upload leaves nothing pointing at a missing object.
-  app.post(`${PROFILE}/avatar-uploads`, ownsTheProfile(), async (c) => {
-    return c.json(await useCases.createAvatarUpload(c.req.param('userId')), 201)
+  // The card, to anyone — its owner included, so a runner sees exactly what others see. Ids are
+  // compared in lowercase, as a token's subject is.
+  app.get('/api/v1/runners/:id', async (c) => {
+    return c.json(cardView(await useCases.getPublicProfile(c.req.param('id').toLowerCase()), photoUrl))
   })
 
   return app

@@ -17,6 +17,8 @@ export type HttpProfileEventsOptions = {
   tokens: ServiceTokens
   /** The correlation id of the request being served, if any (NFR-7.4). */
   currentCorrelationId: () => string | undefined
+  /** A photo's public address, for the card the event carries. */
+  photoUrl: (photoRef: string) => string
   /** Test seams. */
   timeoutMs?: number
   backoffMs?: readonly number[]
@@ -154,7 +156,7 @@ export function httpProfileEvents(options: HttpProfileEventsOptions): ProfileEve
   }
 
   return {
-    updated: (profile) => publish(profileUpdated(profile)),
+    updated: (profile) => publish(profileUpdated(profile, options.photoUrl)),
   }
 }
 
@@ -167,10 +169,10 @@ export type ErrorLog = { error: (fields: object, message: string) => void }
  * (NFR-7.4). The error names the event, the subscriber and the failing step — never the profile.
  */
 export function logUndelivered(log: ErrorLog, currentCorrelationId: () => string | undefined) {
-  return (userId: string, error: unknown): void => {
+  return (id: string, error: unknown): void => {
     for (const failure of error instanceof AggregateError ? error.errors : [error]) {
       const correlationId = failure instanceof EventNotDeliveredError ? failure.correlationId : currentCorrelationId()
-      log.error({ err: failure, userId, correlationId }, 'a profile event was not delivered')
+      log.error({ err: failure, id, correlationId }, 'a profile event was not delivered')
     }
   }
 }

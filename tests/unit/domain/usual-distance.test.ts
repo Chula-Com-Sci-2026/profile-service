@@ -1,33 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { InvalidProfileFieldError } from '../../../src/domain/errors.ts'
-import { UsualDistance } from '../../../src/domain/usual-distance.ts'
+import { toUsualDistance, USUAL_DISTANCES } from '../../../src/domain/usual-distance.ts'
 
-describe('UsualDistance — §4: integer metres, 1–50 000', () => {
-  it.each([1, 5_000, 50_000])('accepts %i', (metres) => {
-    expect(new UsualDistance(metres).metres).toBe(metres)
+describe('UsualDistance — §4: exactly one of three bands', () => {
+  it('is the frontend form’s three labels, the middle one with an en dash', () => {
+    expect(USUAL_DISTANCES).toEqual(['Under 5 km', '5–10 km', 'Over 10 km'])
   })
 
-  it.each([0, -1, 50_001])('rejects %i as out of range', (metres) => {
-    expect(() => new UsualDistance(metres)).toThrow(InvalidProfileFieldError)
+  it.each(['Under 5 km', '5–10 km', 'Over 10 km'])('accepts %p', (label) => {
+    expect(toUsualDistance(label)).toBe(label)
   })
 
-  it.each([5_000.5, Number.NaN, Number.POSITIVE_INFINITY])('rejects %p as not a whole number', (metres) => {
-    expect(() => new UsualDistance(metres)).toThrow(InvalidProfileFieldError)
+  it.each(['5-10 km', '5–10km', 'under 5 km', ''])('refuses %p', (label) => {
+    expect(() => toUsualDistance(label)).toThrow(InvalidProfileFieldError)
   })
 
-  it('names the field it rejected', () => {
-    expect(() => new UsualDistance(0)).toThrow(expect.objectContaining({ field: 'usualDistance' }))
-  })
-
-  it('is compared by value, not identity', () => {
-    expect(new UsualDistance(5_000).equals(new UsualDistance(5_000))).toBe(true)
-    expect(new UsualDistance(5_000).equals(new UsualDistance(5_001))).toBe(false)
-  })
-
-  it('is immutable', () => {
-    const distance = new UsualDistance(5_000)
-    expect(() => {
-      ;(distance as { metres: number }).metres = 1
-    }).toThrow(TypeError)
+  it('names the three in its refusal, so a hyphen for the en dash can be put right', () => {
+    expect(() => toUsualDistance('5-10 km')).toThrow('Under 5 km, 5–10 km, Over 10 km')
+    expect(() => toUsualDistance('5-10 km')).toThrow(expect.objectContaining({ field: 'usualDistance' }))
   })
 })
