@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadConfig, loadDatabaseUrl } from '../../../src/infrastructure/config.ts'
+import { loadConfig, loadDatabaseUrl, loadPhotoAddress } from '../../../src/infrastructure/config.ts'
 
 const complete = {
   DATABASE_URL: 'postgres://profile:profile@localhost:5432/profile',
@@ -158,5 +158,17 @@ describe('loadConfig — profile events', () => {
 
   it('refuses a RABBITMQ_PORT that is not a port', () => {
     expect(() => loadConfig({ ...complete, ...rabbit, RABBITMQ_PORT: '70000' })).toThrow(/RABBITMQ_PORT must be a port number/)
+  })
+})
+
+describe('loadPhotoAddress', () => {
+  it('asks only for the two settings a photo’s address needs', () => {
+    expect(
+      loadPhotoAddress({ OBJECT_STORAGE_PUBLIC_ENDPOINT: 'http://localhost:9000', OBJECT_STORAGE_BUCKET: 'profile-service' }),
+    ).toEqual({ publicEndpoint: 'http://localhost:9000', bucket: 'profile-service' })
+  })
+
+  it('names both when they are missing', () => {
+    expect(() => loadPhotoAddress({})).toThrow(/OBJECT_STORAGE_PUBLIC_ENDPOINT is required; OBJECT_STORAGE_BUCKET is required/)
   })
 })

@@ -109,6 +109,16 @@ docker compose exec rabbitmq rabbitmqadmin --username admin --password admin get
 
 The management UI is at **http://localhost:15672** (`admin` / `admin`).
 
+**Sending every profile again.** `npm run events:republish` writes every profile's current
+`ProfileUpdated` to the outbox, each under the revision it already has, and the running service
+sends them. Run it on purpose: when Buddy Discovery's consumer goes live, after its copy is wiped,
+after a bug in it. In a container it is `docker compose exec profile-service node
+dist/republish-events.js`.
+
+**Revisions restart at 1 after `npm run db:reset`**, and a consumer ignores a revision lower than
+the one it holds — so reset Buddy Discovery's copy together with this database, or it keeps the old
+cards.
+
 ## Local development
 
 The service runs from source; PostgreSQL and MinIO stay in Docker.
@@ -158,6 +168,7 @@ docker compose up -d --force-recreate profile-service
 | `npm start` | run what `build` produced — this is what the container runs |
 | `npm run db:migrate` | apply migrations |
 | `npm run db:seed` | reload the sample runners (**truncates first**) |
+| `npm run events:republish` | write every profile's `ProfileUpdated` to the outbox again, revisions unchanged |
 | `npm run db:reset` | throw the database away and start it again |
 | `npm run db:generate` | after changing `src/infrastructure/schema.ts`, write the migration for it |
 

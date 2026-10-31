@@ -162,6 +162,20 @@ function objectStorageFrom(env: Environment, problems: string[]): ObjectStorageC
   }
 }
 
+/**
+ * Where a photo's public address points, alone — for the republish command, which writes cards but
+ * talks to no storage: `{OBJECT_STORAGE_PUBLIC_ENDPOINT}/{OBJECT_STORAGE_BUCKET}/{photoRef}`.
+ */
+export function loadPhotoAddress(env: Environment = process.env): { publicEndpoint: string; bucket: string } {
+  const publicEndpoint = read(env, 'OBJECT_STORAGE_PUBLIC_ENDPOINT')
+  const bucket = read(env, 'OBJECT_STORAGE_BUCKET')
+  const problems = Object.entries({ OBJECT_STORAGE_PUBLIC_ENDPOINT: publicEndpoint, OBJECT_STORAGE_BUCKET: bucket })
+    .filter(([, value]) => value.length === 0)
+    .map(([name]) => `${name} is required`)
+  if (problems.length > 0) throw new Error(`configuration: ${problems.join('; ')}`)
+  return { publicEndpoint, bucket }
+}
+
 /** Storage alone, for the seed — it uploads photos but has no use for a token setting. */
 export function loadObjectStorage(env: Environment = process.env): ObjectStorageConfig {
   const problems = STORAGE_REQUIRED.filter((name) => read(env, name).length === 0).map(

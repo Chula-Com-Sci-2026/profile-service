@@ -17,7 +17,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=.env src/migrate.ts",
     "db:reset": "docker compose down && docker compose up -d postgres",
-    "db:seed": "node --env-file-if-exists=.env scripts/seed.ts"
+    "db:seed": "node --env-file-if-exists=.env scripts/seed.ts",
+    "events:republish": "node --env-file-if-exists=.env src/republish-events.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1132.0",
