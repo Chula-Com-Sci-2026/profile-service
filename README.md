@@ -115,9 +115,9 @@ sends them. Run it on purpose: when Buddy Discovery's consumer goes live, after 
 after a bug in it. In a container it is `docker compose exec profile-service node
 dist/republish-events.js`.
 
-**Revisions restart at 1 after `npm run db:reset`**, and a consumer ignores a revision lower than
-the one it holds — so reset Buddy Discovery's copy together with this database, or it keeps the old
-cards.
+**Revisions restart at 1 after `npm run db:reset` or `npm run db:seed`** — the seed empties the
+table and saves every runner afresh — and a consumer ignores a revision lower than the one it holds.
+So reset Buddy Discovery's copy together with this database, or it keeps the old cards.
 
 ## Local development
 

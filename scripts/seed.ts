@@ -100,7 +100,8 @@ try {
 
   console.log(
     `\n${entries.length} runners seeded, ${attached} with photos; ` +
-      'their events wait in the outbox for the running service to send',
+      'their events wait in the outbox for the running service to send.\n' +
+      'Revisions start again at 1: reset any copy that holds the old cards, such as Buddy Discovery’s.',
   )
 } finally {
   await database.end()
