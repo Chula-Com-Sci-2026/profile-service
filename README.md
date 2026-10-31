@@ -7,8 +7,8 @@ that, and a profile's `id` is the runner's Identity id, taken as given.
 ## Prerequisites
 
 - **Node 24** — `node --version` should say `v24.x`
-- **Docker**, running. Not optional: PostgreSQL and object storage run in it, the integration
-  tests start their own container, and the service ships as an image
+- **Docker**, running. Not optional: PostgreSQL, object storage and RabbitMQ run in it, the
+  integration tests start their own containers, and the service ships as an image
 
 ## Quick start
 
@@ -82,6 +82,33 @@ The image goes straight to object storage; this service hands out the link and r
 If object storage is down, steps 1 and 3 answer **503** `storage_unavailable`. Nothing else asks
 storage, so saving and reading profiles carry on.
 
+## Events
+
+After every change — a save, a visibility change, a photo attached or removed — the service
+writes `ProfileUpdated` to its outbox in the same transaction as the change, then sends it to
+RabbitMQ: exchange `cra.events`, routing key `ProfileUpdated`, as its own broker user, `profile`.
+The event carries the runner's public card and the profile's `revision`; its contract is
+[docs/profile-events.schema.json](docs/profile-events.schema.json).
+
+`EVENT_SENDER=rabbitmq` sends them, and compose and `.env.example` set it. Under `none`, the
+default, every event still goes to the outbox and waits there. A save never waits on the broker:
+with RabbitMQ down, saves carry on and the events go out, in order, once it is back.
+
+Nothing here consumes the events, so they wait — unroutable — until a queue is bound to
+`cra.events`; Buddy Discovery's consumer binds one. To watch them by hand, bind a queue of your
+own and read from it (RabbitMQ 4 wants it durable):
+
+```bash
+docker compose exec rabbitmq sh -c '
+  a="rabbitmqadmin --username admin --password admin"
+  $a declare exchange --name cra.events --type topic --durable true
+  $a declare queue --name watch --durable true
+  $a declare binding --source cra.events --destination-type queue --destination watch --routing-key ProfileUpdated'
+docker compose exec rabbitmq rabbitmqadmin --username admin --password admin get messages --queue watch --count 10
+```
+
+The management UI is at **http://localhost:15672** (`admin` / `admin`).
+
 ## Local development
 
 The service runs from source; PostgreSQL and MinIO stay in Docker.
@@ -90,7 +117,7 @@ The service runs from source; PostgreSQL and MinIO stay in Docker.
 docker compose stop profile-service               # port 3000 has one owner — see below
 cp .env.example .env                              # the defaults match docker compose
 npm ci
-docker compose up -d postgres minio create-bucket
+docker compose up -d postgres minio create-bucket rabbitmq create-broker-user
 npm run db:migrate
 npm run db:seed                                   # seven runners, four with photos
 npm run dev                                       # restarts on save, readable logs
@@ -125,7 +152,7 @@ docker compose up -d --force-recreate profile-service
 |---|---|
 | `npm run dev` | run it locally, restarting on save |
 | `npm test` | unit tests — no database, no Docker, about a second |
-| `npm run test:int` | integration tests — starts its own PostgreSQL, so no setup |
+| `npm run test:int` | integration tests — starts its own PostgreSQL and RabbitMQ, so no setup |
 | `npm run typecheck` · `npm run lint` | both must pass |
 | `npm run build` | compile to `dist/` |
 | `npm start` | run what `build` produced — this is what the container runs |
@@ -134,18 +161,18 @@ docker compose up -d --force-recreate profile-service
 | `npm run db:reset` | throw the database away and start it again |
 | `npm run db:generate` | after changing `src/infrastructure/schema.ts`, write the migration for it |
 
-`npm run test:int` takes about ten seconds, nearly all of it starting the container — and it
+`npm run test:int` takes about twenty seconds, nearly all of it starting the containers — and it
 passes on a machine that has never seen this project.
 
 `npm run build && npm start` runs exactly what the image runs. It needs `.env` in place, and
-PostgreSQL and MinIO up.
+PostgreSQL and MinIO up — and RabbitMQ, for events to go out.
 
 ## Project structure
 
 ```
 src/domain/          the model — Profile, its rules, no dependencies
 src/application/     use cases, one per operation
-src/infrastructure/  PostgreSQL, object storage, configuration
+src/infrastructure/  PostgreSQL, object storage, RabbitMQ, configuration
 src/interface/http/  routes, middleware, request and response mapping
 ```
 
@@ -157,7 +184,8 @@ Dependencies point inward only: `interface → application → domain ← infras
 |---|---|
 | [docs/domain.md](docs/domain.md) | **authoritative.** What a profile is and the rules it obeys — start here |
 | [docs/openapi.yaml](docs/openapi.yaml) | the HTTP contract, derived from `domain.md`. Rendered at `/docs` |
+| [docs/profile-events.schema.json](docs/profile-events.schema.json) | the event contract: `ProfileUpdated` on RabbitMQ, in the team's JSON Schema format |
 | [docs/build_plan.md](docs/build_plan.md) | why it is built this way, and what is deliberately left undone |
 
-Tests hold the code to `openapi.yaml` on every run. Nothing enforces `domain.md` — and it still
+Tests hold the code to `openapi.yaml` and `profile-events.schema.json` on every run. Nothing enforces `domain.md` — and it still
 wins: where the code and `domain.md` disagree, the code is the bug.

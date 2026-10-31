@@ -18,8 +18,11 @@ const zone = (files, groups, message) => ({
 
 const FRAMEWORKS = ['hono', 'hono/*', '@hono/*', 'drizzle-orm', 'drizzle-orm/*', 'pg', 'zod']
 
-/** Adapters too: `jose` and `pino` belong to interface/http and the composition root, the S3 client to infrastructure. */
-const ADAPTERS = ['jose', 'pino', 'pino/*', '@aws-sdk/*']
+/**
+ * Adapters too: `jose` and `pino` belong to interface/http and the composition root, the S3 client
+ * and the broker client to infrastructure.
+ */
+const ADAPTERS = ['jose', 'pino', 'pino/*', '@aws-sdk/*', 'amqplib']
 
 export default tseslint.config(
   { ignores: ['node_modules/**', 'drizzle/**', 'dist/**'] },

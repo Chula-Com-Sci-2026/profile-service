@@ -68,6 +68,48 @@ services:
         mc mb --ignore-existing store/profile-service
         mc anonymous set-json /tmp/public-read.json store/profile-service
 
+  # The team's broker and image (ADR-0021). Profile publishes ProfileUpdated to its `cra.events`
+  # exchange; nothing here consumes it, so until a consumer binds a queue the events wait,
+  # unroutable, in the outbox. The admin login is a development value, for the management UI
+  # (http://localhost:15672) and the one-shot below; Profile itself never uses it.
+  rabbitmq:
+    image: rabbitmq:4.3.6-management
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  # Provisioning, like create-bucket: Profile's own broker user (B11), with the least it needs.
+  # configure and write on `cra.events` only, read on nothing — configure because Profile declares
+  # the exchange itself on every connect, write because it publishes there, and nothing else.
+  # The image's own rabbitmqadmin talks to the management API, which may answer a little after
+  # the broker reports healthy, so it asks until it does. `$$` because compose interpolates `$`.
+  create-broker-user:
+    image: rabbitmq:4.3.6-management
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        admin="rabbitmqadmin --host rabbitmq --username admin --password admin"
+        tries=0
+        until $$admin show overview > /dev/null 2>&1; do
+          tries=$$((tries + 1))
+          if [ "$$tries" -ge 60 ]; then echo "the management API never answered" >&2; exit 1; fi
+          sleep 1
+        done
+        $$admin declare user --name profile --password profile --tags ''
+        $$admin declare permissions --vhost / --username profile --configure '^cra\.events$$' --write '^cra\.events$$' --read '^$$'
+
   # Same image as the service, different command, run once and gone. Never on the service's
   # boot: three replicas starting together would be three migrations against one schema.
   migrate:
@@ -101,6 +143,13 @@ services:
       OBJECT_STORAGE_BUCKET: profile-service
       OBJECT_STORAGE_ACCESS_KEY: minioadmin
       OBJECT_STORAGE_SECRET_KEY: minioadmin
+      # Profile events go from the outbox to RabbitMQ, as Profile's own broker user. Startup never
+      # waits on the broker — it is not in depends_on — so RabbitMQ down costs delivery and nothing
+      # else; the events wait in the outbox until it is back.
+      EVENT_SENDER: rabbitmq
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: profile
+      RABBITMQ_PASSWORD: profile
     # Must exceed SHUTDOWN_DRAIN_MS plus the close deadline, or the container is killed
     # mid-drain and the graceful shutdown is worse than none. 3s + 10s, with room.
     stop_grace_period: 20s

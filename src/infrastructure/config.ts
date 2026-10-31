@@ -33,7 +33,24 @@ export type Config = {
     secretAccessKey: string
     uploadExpiresInSeconds: number
   }
+  /** Where profile events go from the outbox: RabbitMQ, or nowhere yet (they wait). */
+  events: EventsConfig
 }
+
+/** Notification's names for the same settings (B11): Profile is its own broker user. */
+export type RabbitMqConfig = {
+  host: string
+  port: number
+  user: string
+  password: string
+  vhost: string
+}
+
+/**
+ * `EVENT_SENDER` — exactly one sender, or none. `none` is the default, so a clone and the unit
+ * tests need no broker: every event still goes to the outbox, and waits there.
+ */
+export type EventsConfig = { sender: 'none' } | { sender: 'rabbitmq'; rabbitmq: RabbitMqConfig }
 
 /** The team's values, the same defaults Identity and Notification use. */
 const DEFAULT_ISSUER = 'cant-run-alone-local'
@@ -83,14 +100,43 @@ function seconds(raw: string, problems: string[]): number {
   return parsed
 }
 
-function port(raw: string, problems: string[]): number {
-  if (raw.length === 0) return 3000
+function port(raw: string, name: string, fallback: number, problems: string[]): number {
+  if (raw.length === 0) return fallback
   const parsed = Number(raw)
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
-    problems.push(`PORT must be a port number, not ${JSON.stringify(raw)}`)
-    return 3000
+    problems.push(`${name} must be a port number, not ${JSON.stringify(raw)}`)
+    return fallback
   }
   return parsed
+}
+
+const SENDERS = ['rabbitmq', 'none'] as const
+
+/**
+ * The sender, and what it needs. With `rabbitmq`, the host and the login have no sensible default
+ * and are required; the port and the virtual host default as Notification's do. With `none`, the
+ * RabbitMQ settings are not looked at.
+ */
+function eventsFrom(env: Environment, problems: string[]): EventsConfig {
+  const sender = read(env, 'EVENT_SENDER') || 'none'
+  if (!(SENDERS as readonly string[]).includes(sender)) {
+    problems.push(`EVENT_SENDER must be ${SENDERS.join(' or ')}, not ${JSON.stringify(sender)}`)
+    return { sender: 'none' }
+  }
+  if (sender === 'none') return { sender: 'none' }
+
+  const rabbitmq = {
+    host: read(env, 'RABBITMQ_HOST'),
+    port: port(read(env, 'RABBITMQ_PORT'), 'RABBITMQ_PORT', 5672, problems),
+    user: read(env, 'RABBITMQ_USER'),
+    password: read(env, 'RABBITMQ_PASSWORD'),
+    vhost: read(env, 'RABBITMQ_VHOST') || '/',
+  }
+  const needed = { RABBITMQ_HOST: rabbitmq.host, RABBITMQ_USER: rabbitmq.user, RABBITMQ_PASSWORD: rabbitmq.password }
+  for (const [name, value] of Object.entries(needed)) {
+    if (value.length === 0) problems.push(`${name} is required when EVENT_SENDER is rabbitmq`)
+  }
+  return { sender: 'rabbitmq', rabbitmq }
 }
 
 /**
@@ -136,9 +182,10 @@ export function loadConfig(env: Environment = process.env): Config {
     problems.push(`LOG_LEVEL must be one of ${LOG_LEVELS.join(', ')}, not ${JSON.stringify(logLevel)}`)
   }
 
-  const listenOn = port(read(env, 'PORT'), problems)
+  const listenOn = port(read(env, 'PORT'), 'PORT', 3000, problems)
   const drainFor = milliseconds(read(env, 'SHUTDOWN_DRAIN_MS'), 'SHUTDOWN_DRAIN_MS', 0, problems)
   const storage = objectStorageFrom(env, problems)
+  const events = eventsFrom(env, problems)
 
   if (problems.length > 0) {
     throw new Error(`configuration: ${problems.join('; ')}`)
@@ -156,5 +203,6 @@ export function loadConfig(env: Environment = process.env): Config {
       audience: read(env, 'JWT_AUDIENCE') || DEFAULT_AUDIENCE,
     },
     objectStorage: storage,
+    events,
   }
 }

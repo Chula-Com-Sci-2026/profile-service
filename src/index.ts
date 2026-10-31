@@ -15,7 +15,10 @@ import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repos
 import { drizzleUnitOfWork } from './infrastructure/drizzle-unit-of-work.ts'
 import { logOrphan } from './infrastructure/log-orphan.ts'
 import { createPhotoStorage } from './infrastructure/minio-photo-storage.ts'
+import { drizzleOutbox } from './infrastructure/outbox.ts'
+import { outboxRelay } from './infrastructure/outbox-relay.ts'
 import { photoUrlFor } from './infrastructure/photo-url.ts'
+import { rabbitmqEventSender } from './infrastructure/rabbitmq-event-sender.ts'
 import { createApp } from './interface/http/app.ts'
 import { currentCorrelationId } from './interface/http/request-context.ts'
 
@@ -62,6 +65,23 @@ const unitOfWork = drizzleUnitOfWork(database.db, {
 
 /** Flipped before anything stops accepting, so /ready answers 503 first. */
 let draining = false
+
+/**
+ * The relay sends the outbox, when `EVENT_SENDER` names a sender. It connects only when an event
+ * waits, so neither startup nor /ready waits on the broker: RabbitMQ down costs delivery and
+ * nothing else. Under `none` the events wait in the outbox for a sender to be configured.
+ */
+const relay =
+  config.events.sender === 'rabbitmq'
+    ? outboxRelay({ outbox: drizzleOutbox(database.db), sender: rabbitmqEventSender(config.events.rabbitmq), log: logger })
+    : undefined
+if (config.events.sender === 'rabbitmq') {
+  const { host, port, vhost, user } = config.events.rabbitmq
+  logger.info({ host, port, vhost, user }, 'profile events go to RabbitMQ')
+} else {
+  logger.info('EVENT_SENDER is none: profile events wait in the outbox')
+}
+relay?.start()
 
 const app = createApp({
   useCases: {
@@ -134,11 +154,19 @@ async function shutdown(signal: string): Promise<void> {
 
   // close() waits for connections to end; this evicts the idle keep-alive ones a load balancer
   // is likely holding, which otherwise sit until keepAliveTimeout and can burn the deadline.
+  // The relay and its broker connection go before the pool: a tick in flight still needs the
+  // database to mark what it sent.
   server.close(() => {
-    void database.end().then(
+    void (async () => {
+      if (relay !== undefined) {
+        await relay.stop()
+        logger.info('the event relay has stopped')
+      }
+      await database.end()
+    })().then(
       () => process.exit(0),
       (error: unknown) => {
-        logger.error({ err: error }, 'the pool did not close cleanly')
+        logger.error({ err: error }, 'the relay or the pool did not close cleanly')
         process.exit(1)
       },
     )

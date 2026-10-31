@@ -120,3 +120,43 @@ describe('loadDatabaseUrl', () => {
     expect(() => loadDatabaseUrl({})).toThrow(/DATABASE_URL/)
   })
 })
+
+describe('loadConfig — profile events', () => {
+  const rabbit = {
+    EVENT_SENDER: 'rabbitmq',
+    RABBITMQ_HOST: 'rabbitmq',
+    RABBITMQ_USER: 'profile',
+    RABBITMQ_PASSWORD: 'secret',
+  }
+
+  it('sends nothing by default — EVENT_SENDER is none, and no RabbitMQ setting is needed', () => {
+    expect(loadConfig(complete).events).toEqual({ sender: 'none' })
+    expect(loadConfig({ ...complete, EVENT_SENDER: 'none' }).events).toEqual({ sender: 'none' })
+  })
+
+  it('reads the RabbitMQ settings when EVENT_SENDER is rabbitmq, with port 5672 and vhost / by default', () => {
+    expect(loadConfig({ ...complete, ...rabbit }).events).toEqual({
+      sender: 'rabbitmq',
+      rabbitmq: { host: 'rabbitmq', port: 5672, user: 'profile', password: 'secret', vhost: '/' },
+    })
+  })
+
+  it('reads RABBITMQ_PORT and RABBITMQ_VHOST when they are set', () => {
+    const events = loadConfig({ ...complete, ...rabbit, RABBITMQ_PORT: '5673', RABBITMQ_VHOST: 'cra' }).events
+    expect(events).toMatchObject({ rabbitmq: { port: 5673, vhost: 'cra' } })
+  })
+
+  it('requires RABBITMQ_HOST, RABBITMQ_USER and RABBITMQ_PASSWORD when EVENT_SENDER is rabbitmq, named at once', () => {
+    expect(() => loadConfig({ ...complete, EVENT_SENDER: 'rabbitmq' })).toThrow(
+      /RABBITMQ_HOST is required when EVENT_SENDER is rabbitmq; RABBITMQ_USER is required.*; RABBITMQ_PASSWORD is required/,
+    )
+  })
+
+  it('refuses an EVENT_SENDER it does not know', () => {
+    expect(() => loadConfig({ ...complete, EVENT_SENDER: 'rest' })).toThrow(/EVENT_SENDER must be rabbitmq or none, not "rest"/)
+  })
+
+  it('refuses a RABBITMQ_PORT that is not a port', () => {
+    expect(() => loadConfig({ ...complete, ...rabbit, RABBITMQ_PORT: '70000' })).toThrow(/RABBITMQ_PORT must be a port number/)
+  })
+})
