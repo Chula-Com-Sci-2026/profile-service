@@ -4,7 +4,12 @@ import { localServer, type Reply } from './local-server.ts'
 
 const RAY = '11111111-1111-4111-8111-111111111111'
 const BEAM = '44444444-4444-4444-8444-444444444444'
-const KEY = /^photos\/11111111-1111-4111-8111-111111111111\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const KEY_SHAPE = /^photos\/11111111-1111-4111-8111-111111111111\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** Keys in the shape this adapter mints: `photos/{id}/{uuid}`. */
+const MINE = `photos/${RAY}/0b5f3c1e-7d2a-4e9b-8f61-2c4d6e8a0b1c`
+const MISSING = `photos/${RAY}/743e3a4e-7d97-431d-9fdf-bf7df238ee34`
+const THEIRS = `photos/${BEAM}/0b5f3c1e-7d2a-4e9b-8f61-2c4d6e8a0b1c`
 
 const options = {
   publicEndpoint: 'http://localhost:9000',
@@ -36,7 +41,7 @@ describe('the key it mints', () => {
     const { storage } = await storageAnswering(() => ({ status: 200 }))
     const first = await storage.createUpload(RAY)
     const second = await storage.createUpload(RAY)
-    expect(first.photoRef).toMatch(KEY)
+    expect(first.photoRef).toMatch(KEY_SHAPE)
     expect(first.photoRef).not.toBe(second.photoRef)
   })
 
@@ -92,37 +97,61 @@ describe('createUpload asks storage first (Q4)', () => {
 describe('holds — was this runner’s photo uploaded?', () => {
   it('is true when the object is there', async () => {
     const { storage, received } = await storageAnswering(() => ({ status: 200 }))
-    expect(await storage.holds(RAY, `photos/${RAY}/abc`)).toBe(true)
-    expect(asked(received)).toEqual([`HEAD /profile-service/photos/${RAY}/abc`])
+    expect(await storage.holds(RAY, MINE)).toBe(true)
+    expect(asked(received)).toEqual([`HEAD /profile-service/${MINE}`])
   })
 
   it('is false when the object is not', async () => {
     const { storage } = await storageAnswering(() => ({ status: 404 }))
-    expect(await storage.holds(RAY, `photos/${RAY}/missing`)).toBe(false)
+    expect(await storage.holds(RAY, MISSING)).toBe(false)
   })
 
   it('is false for another runner’s key, without asking storage at all', async () => {
     const { storage, received } = await storageAnswering(() => ({ status: 200 }))
-    expect(await storage.holds(RAY, `photos/${BEAM}/abc`)).toBe(false)
+    expect(await storage.holds(RAY, THEIRS)).toBe(false)
     expect(received).toEqual([])
   })
 
   it('rejects when storage cannot say', async () => {
     const { storage } = await storageAnswering(() => ({ status: 500 }))
-    await expect(storage.holds(RAY, `photos/${RAY}/abc`)).rejects.toThrow()
+    await expect(storage.holds(RAY, MINE)).rejects.toThrow()
+  })
+})
+
+describe('only a key this service minted for the runner is theirs', () => {
+  // A raw prefix is not proof: the SDK sends a key as it is, and a store that normalises paths would
+  // resolve these into another runner's folder — or, like MinIO, refuse them as a fault.
+  const forged = [
+    ['a dot segment climbing into another runner’s folder', `photos/${RAY}/../${BEAM}/0b5f3c1e-7d2a-4e9b-8f61-2c4d6e8a0b1c`],
+    ['an empty segment', `photos/${RAY}//x`],
+    ['something that is not a uuid', `photos/${RAY}/not-a-uuid`],
+    ['a uuid in uppercase, which randomUUID never mints', `photos/${RAY}/0B5F3C1E-7D2A-4E9B-8F61-2C4D6E8A0B1C`],
+    ['a segment after the uuid', `${MINE}/x`],
+  ] as const
+
+  it.each(forged)('holds is false for %s, without asking storage', async (_, key) => {
+    const { storage, received } = await storageAnswering(() => ({ status: 200 }))
+    expect(await storage.holds(RAY, key)).toBe(false)
+    expect(received).toEqual([])
+  })
+
+  it.each(forged)('remove refuses %s, without asking storage', async (_, key) => {
+    const { storage, received } = await storageAnswering(() => ({ status: 204 }))
+    await expect(storage.remove(RAY, key)).rejects.toThrow(/refusing to remove/)
+    expect(received).toEqual([])
   })
 })
 
 describe('remove', () => {
   it('refuses a key outside the runner’s prefix, without asking storage', async () => {
     const { storage, received } = await storageAnswering(() => ({ status: 204 }))
-    await expect(storage.remove(RAY, `photos/${BEAM}/abc`)).rejects.toThrow(/outside photos\/11111111/)
+    await expect(storage.remove(RAY, THEIRS)).rejects.toThrow(/refusing to remove/)
     expect(received).toEqual([])
   })
 
   it('deletes a key of the runner’s', async () => {
     const { storage, received } = await storageAnswering(() => ({ status: 204 }))
-    await storage.remove(RAY, `photos/${RAY}/abc`)
-    expect(asked(received)).toEqual([`DELETE /profile-service/photos/${RAY}/abc`])
+    await storage.remove(RAY, MINE)
+    expect(asked(received)).toEqual([`DELETE /profile-service/${MINE}`])
   })
 })

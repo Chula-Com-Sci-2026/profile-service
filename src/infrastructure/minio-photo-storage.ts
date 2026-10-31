@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto'
 import { DeleteObjectCommand, HeadBucketCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type { PhotoStorage, PhotoUpload } from '../application/ports/photo-storage.ts'
+import { isPhotoKeyOf, newPhotoKey } from './photo-key.ts'
 
 export type ObjectStorageOptions = {
   /** Where this service reaches the store. Inside compose, `http://minio:9000`. */
@@ -55,16 +55,12 @@ export function createPhotoStorage(options: ObjectStorageOptions): PhotoStorage 
   // Signing is a local computation: this client never reaches the network.
   const signing = new S3Client({ ...shared, endpoint: options.publicEndpoint })
 
-  /** Every photo a runner has shares this prefix, which is what proves a key is theirs. */
-  const prefixFor = (id: string): string => `photos/${id}/`
-
   return {
     createUpload: async (id): Promise<PhotoUpload> => {
       // Signing would succeed with storage down, and the browser's upload would then fail with a
       // network error the frontend cannot explain. Asking first turns that into a 503 here.
       await operations.send(new HeadBucketCommand({ Bucket: options.bucket }))
-      // A fresh key per upload: replacing a photo cannot collide with a cached copy of the old one.
-      const photoRef = `${prefixFor(id)}${randomUUID()}`
+      const photoRef = newPhotoKey(id)
       const uploadUrl = await getSignedUrl(signing, new PutObjectCommand({ Bucket: options.bucket, Key: photoRef }), {
         expiresIn: options.uploadExpiresInSeconds,
       })
@@ -72,9 +68,10 @@ export function createPhotoStorage(options: ObjectStorageOptions): PhotoStorage 
     },
 
     holds: async (id, photoRef) => {
-      // The key came from a request body. Another runner's is no photo of this one's, whether or
-      // not it exists — and storage is not asked about it at all.
-      if (!photoRef.startsWith(prefixFor(id))) return false
+      // The key came from a request body. Anything but a key minted for this runner — another
+      // runner's, or one that climbs out of this runner's folder — is no photo of theirs, whether
+      // or not it exists, and storage is not asked about it at all.
+      if (!isPhotoKeyOf(id, photoRef)) return false
       try {
         await operations.send(new HeadObjectCommand({ Bucket: options.bucket, Key: photoRef }))
         return true
@@ -85,10 +82,11 @@ export function createPhotoStorage(options: ObjectStorageOptions): PhotoStorage 
     },
 
     remove: async (id, photoRef) => {
-      // Only keys a profile held reach here, and a profile only holds keys this runner was given —
-      // but the prefix is the proof of ownership, so it is checked where the deleting happens.
-      if (!photoRef.startsWith(prefixFor(id))) {
-        throw new Error(`refusing to remove ${photoRef}: it is outside ${prefixFor(id)}`)
+      // Only keys a profile held reach here, and a profile only holds keys attach accepted — but a
+      // key minted for this runner is the proof of ownership, so it is checked where the deleting
+      // happens.
+      if (!isPhotoKeyOf(id, photoRef)) {
+        throw new Error(`refusing to remove ${photoRef}: it is not a photo key minted for ${id}`)
       }
       await operations.send(new DeleteObjectCommand({ Bucket: options.bucket, Key: photoRef }))
     },

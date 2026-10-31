@@ -3,7 +3,7 @@ import { createPhotoUpload } from '../../../src/application/create-photo-upload.
 import { StorageUnavailableError } from '../../../src/application/errors.ts'
 import { ProfileNotFoundError } from '../../../src/domain/errors.ts'
 import { InMemoryProfileRepository } from './in-memory-profile-repository.ts'
-import { FakePhotoStorage } from './photo-storage-double.ts'
+import { FakePhotoStorage, keyFor } from './photo-storage-double.ts'
 import { aProfile, RAY } from './profiles.ts'
 
 describe('createPhotoUpload', () => {
@@ -13,7 +13,7 @@ describe('createPhotoUpload', () => {
 
     const upload = await createPhotoUpload(repository, new FakePhotoStorage())(RAY)
 
-    expect(upload.photoRef).toBe(`photos/${RAY}/abc`)
+    expect(upload.photoRef).toBe(keyFor(RAY))
     expect(upload.uploadUrl).toContain('X-Amz-Signature')
     expect(upload.expiresInSeconds).toBeGreaterThan(0)
   })

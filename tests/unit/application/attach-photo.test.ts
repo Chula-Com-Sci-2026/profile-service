@@ -3,13 +3,13 @@ import { attachPhoto } from '../../../src/application/attach-photo.ts'
 import { StorageUnavailableError } from '../../../src/application/errors.ts'
 import { InvalidProfileFieldError, ProfileNotFoundError } from '../../../src/domain/errors.ts'
 import { InMemoryProfileRepository } from './in-memory-profile-repository.ts'
-import { FakePhotoStorage } from './photo-storage-double.ts'
+import { FakePhotoStorage, keyFor } from './photo-storage-double.ts'
 import { RecordingProfileEvents, publishing } from './profile-events-double.ts'
 import { aProfile, RAY } from './profiles.ts'
 
 const BEAM = '44444444-4444-4444-8444-444444444444'
-const NEW = `photos/${RAY}/new`
-const OLD = `photos/${RAY}/old`
+const NEW = keyFor(RAY, '9d3a7c5e-1b2f-4a6c-8e0d-3f5b7a9c1e2d')
+const OLD = keyFor(RAY, 'c6f4de83-2b48-4593-a003-42cc94afa15f')
 
 function given(photoRef: string | null = null) {
   const repository = new InMemoryProfileRepository()
@@ -48,13 +48,13 @@ describe('attachPhoto', () => {
 
   it('refuses a key that was never uploaded, on photoRef', async () => {
     const { attach } = given()
-    await expect(attach(RAY, `photos/${RAY}/missing`)).rejects.toThrow(expect.objectContaining({ field: 'photoRef' }))
+    await expect(attach(RAY, keyFor(RAY, '743e3a4e-7d97-431d-9fdf-bf7df238ee34'))).rejects.toThrow(expect.objectContaining({ field: 'photoRef' }))
   })
 
   it('refuses another runner’s key even when it exists, and deletes nothing of theirs', async () => {
     // Review Focus 5: a runner must never adopt — and later have removed — another runner's photo.
     const { repository, storage, events, attach } = given(OLD)
-    const theirs = `photos/${BEAM}/abc`
+    const theirs = keyFor(BEAM)
     storage.objects.add(theirs)
 
     await expect(attach(RAY, theirs)).rejects.toThrow(InvalidProfileFieldError)
@@ -62,6 +62,16 @@ describe('attachPhoto', () => {
     expect(storage.objects.has(theirs)).toBe(true)
     expect(events.published).toEqual([])
     expect((await repository.findById(RAY))?.photoRef).toBe(OLD)
+  })
+
+  it.each([
+    ['another runner’s real key', keyFor(BEAM)],
+    ['a key whose dot segment climbs into another runner’s folder', `photos/${RAY}/../${BEAM}/0b5f3c1e-7d2a-4e9b-8f61-2c4d6e8a0b1c`],
+  ])('refuses %s on photoRef without asking storage — a 422, never a 503', async (_, key) => {
+    const { storage, attach } = given()
+    storage.objects.add(key)
+    storage.unreachable = true // asking would answer 503; refusing the key answers first
+    await expect(attach(RAY, key)).rejects.toThrow(expect.objectContaining({ field: 'photoRef' }))
   })
 
   it('refuses a key over 128 characters before asking storage', async () => {

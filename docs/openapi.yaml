@@ -138,8 +138,8 @@ paths:
       summary: Attach an uploaded photo
       description: >-
         The last step of the photo handshake: puts the uploaded photo on the profile. The key
-        must be one this runner was given (`photos/{id}/…`) and the object must have been
-        uploaded; otherwise 422 on `photoRef`. A photo it replaces is deleted from storage after
+        must be exactly one this service minted for this runner (`photos/{id}/{uuid}`) and the
+        object must have been uploaded; otherwise 422 on `photoRef`. A photo it replaces is deleted from storage after
         the change, best effort. `photoUrl` then loads in an `<img>`, with no token.
       requestBody:
         required: true

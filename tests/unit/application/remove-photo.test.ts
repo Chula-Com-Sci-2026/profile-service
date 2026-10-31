@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { removePhoto } from '../../../src/application/remove-photo.ts'
 import { ProfileNotFoundError } from '../../../src/domain/errors.ts'
 import { InMemoryProfileRepository } from './in-memory-profile-repository.ts'
-import { FakePhotoStorage } from './photo-storage-double.ts'
+import { FakePhotoStorage, keyFor } from './photo-storage-double.ts'
 import { RecordingProfileEvents, publishing } from './profile-events-double.ts'
 import { aProfile, RAY } from './profiles.ts'
 
-const PHOTO = `photos/${RAY}/abc`
+const PHOTO = keyFor(RAY)
 
 function given(photoRef: string | null = PHOTO) {
   const repository = new InMemoryProfileRepository()

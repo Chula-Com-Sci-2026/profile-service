@@ -20,7 +20,7 @@ import { contractDocument } from '../../src/interface/http/docs.ts'
 import { errorHandler } from '../../src/interface/http/error-handler.ts'
 import { currentCorrelationId } from '../../src/interface/http/request-context.ts'
 import { documentedResponses, exercised, expectContract, expectSchema } from './contract.ts'
-import { FakePhotoStorage } from '../unit/application/photo-storage-double.ts'
+import { FakePhotoStorage, keyFor } from '../unit/application/photo-storage-double.ts'
 import { RecordingProfileEvents } from '../unit/application/profile-events-double.ts'
 import { anIdentity, type Identity } from './identity.ts'
 
@@ -515,7 +515,7 @@ describe('POST /api/v1/me/profile/photo-uploads — createPhotoUpload', () => {
     const body = await bodyOf(response)
     await expectContract('createPhotoUpload', 201, response)
 
-    expect(body).toMatchObject({ photoRef: `photos/${NOK}/abc`, expiresInSeconds: 300 })
+    expect(body).toMatchObject({ photoRef: keyFor(NOK), expiresInSeconds: 300 })
     expect(String(body['uploadUrl'])).toContain('X-Amz-Signature')
   })
 
@@ -546,7 +546,7 @@ describe('POST /api/v1/me/profile/photo-uploads — createPhotoUpload', () => {
 describe('PUT /api/v1/me/profile/photo — attachPhoto', () => {
   const attach = (id: string, body: unknown): Promise<Response> =>
     as(id, `${ME}/photo`, { method: 'PUT', body: JSON.stringify(body) })
-  const uploaded = `photos/${NOK}/abc`
+  const uploaded = keyFor(NOK)
 
   it('200 puts the uploaded photo on the profile, with its public address', async () => {
     await givenAProfile()
@@ -571,7 +571,7 @@ describe('PUT /api/v1/me/profile/photo — attachPhoto', () => {
 
   it('removes the photo it replaces', async () => {
     await givenAProfile()
-    const replacement = `photos/${NOK}/def`
+    const replacement = keyFor(NOK, '9d3a7c5e-1b2f-4a6c-8e0d-3f5b7a9c1e2d')
     storage.objects.add(uploaded)
     storage.objects.add(replacement)
     await attach(NOK, { photoRef: uploaded })
@@ -590,7 +590,7 @@ describe('PUT /api/v1/me/profile/photo — attachPhoto', () => {
   it('422 for another runner’s key, even one that exists, and nothing of theirs is removed', async () => {
     // Review Focus 5.
     await givenAProfile()
-    const theirs = `photos/${BEAM}/abc`
+    const theirs = keyFor(BEAM)
     storage.objects.add(theirs)
     const response = await attach(NOK, { photoRef: theirs })
     const body = await bodyOf(response)
@@ -599,6 +599,17 @@ describe('PUT /api/v1/me/profile/photo — attachPhoto', () => {
     expect(body).toMatchObject({ fieldErrors: { photoRef: expect.any(String) } })
     expect(storage.removedKeys).toEqual([])
     expect(storage.objects.has(theirs)).toBe(true)
+  })
+
+  it('422 on photoRef for a key whose dot segment climbs into another runner’s folder', async () => {
+    // A store that normalises paths would find Beam's photo at this key; here the double holds it.
+    await givenAProfile()
+    const climbing = `photos/${NOK}/../${BEAM}/0b5f3c1e-7d2a-4e9b-8f61-2c4d6e8a0b1c`
+    storage.objects.add(climbing)
+    const response = await attach(NOK, { photoRef: climbing })
+    const body = await bodyOf(response)
+    await expectContract('attachPhoto', 422, response)
+    expect(body).toMatchObject({ fieldErrors: { photoRef: expect.any(String) } })
   })
 
   it('422 when the body has no photoRef', async () => {
@@ -636,7 +647,7 @@ describe('PUT /api/v1/me/profile/photo — attachPhoto', () => {
 
 describe('DELETE /api/v1/me/profile/photo — removePhoto', () => {
   const remove = (id: string): Promise<Response> => as(id, `${ME}/photo`, { method: 'DELETE' })
-  const uploaded = `photos/${NOK}/abc`
+  const uploaded = keyFor(NOK)
 
   async function givenAPhoto(): Promise<void> {
     await givenAProfile()
@@ -703,8 +714,8 @@ describe('an edit form that sends back what it read', () => {
     // Review Focus 2: the owner's view, round-tripped through a save with one field changed.
     await givenAProfile()
     await as(NOK, `${ME}/visibility`, { method: 'PUT', body: JSON.stringify({ hiddenFields: ['bio'] }) })
-    storage.objects.add(`photos/${NOK}/abc`)
-    await as(NOK, `${ME}/photo`, { method: 'PUT', body: JSON.stringify({ photoRef: `photos/${NOK}/abc` }) })
+    storage.objects.add(keyFor(NOK))
+    await as(NOK, `${ME}/photo`, { method: 'PUT', body: JSON.stringify({ photoRef: keyFor(NOK) }) })
 
     const read = await bodyOf(await as(NOK, ME))
     const response = await save(NOK, { ...read, name: 'Nok R.' })
