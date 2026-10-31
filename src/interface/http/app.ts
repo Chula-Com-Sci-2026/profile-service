@@ -3,20 +3,22 @@ import type { Logger } from 'pino'
 import type { GetProfile } from '../../application/get-profile.ts'
 import type { GetPublicProfile } from '../../application/get-public-profile.ts'
 import type { SaveProfile } from '../../application/save-profile.ts'
+import type { SetFieldVisibility } from '../../application/set-field-visibility.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
 import type { Env } from './context.ts'
 import { contractDocument, documentationAsset, documentationPage } from './docs.ts'
 import { errorHandler, notFoundHandler } from './error-handler.ts'
 import { MalformedBodyError } from './errors.ts'
-import { toContent } from './profile-input.ts'
+import { toContent, toHiddenFields } from './profile-input.ts'
 import { cardView, ownerView, type PhotoUrl } from './profile-view.ts'
 import { requestContext } from './request-context.ts'
-import { profileSave } from './validators.ts'
+import { profileSave, visibility } from './validators.ts'
 
 export type UseCases = {
   saveProfile: SaveProfile
   getProfile: GetProfile
   getPublicProfile: GetPublicProfile
+  setFieldVisibility: SetFieldVisibility
 }
 
 /**
@@ -97,6 +99,12 @@ export function createApp({ useCases, logger, authentication: auth, readiness, p
   app.put(ME, async (c) => {
     const body = profileSave.parse(await jsonBody(c))
     return c.json(ownerView(await useCases.saveProfile(c.get('caller').id, toContent(body)), photoUrl))
+  })
+
+  // Its own operation, so a save can never reveal a field (domain.md §3).
+  app.put(`${ME}/visibility`, async (c) => {
+    const body = visibility.parse(await jsonBody(c))
+    return c.json(ownerView(await useCases.setFieldVisibility(c.get('caller').id, toHiddenFields(body)), photoUrl))
   })
 
   // The card, to anyone — its owner included, so a runner sees exactly what others see. Ids are

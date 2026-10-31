@@ -50,6 +50,7 @@ Ray's profile is there once `npm run db:seed` has run (see Local development).
 |---|---|---|
 | `GET` | `/api/v1/me/profile` | your whole profile — 404 until you save one |
 | `PUT` | `/api/v1/me/profile` | save it — creates or replaces, 200 every time |
+| `PUT` | `/api/v1/me/profile/visibility` | choose which fields other runners see |
 | `GET` | `/api/v1/runners/{id}` | a runner's public card, yours included |
 | `GET` | `/up` | is the process alive? |
 | `GET` | `/ready` | should traffic come here? |

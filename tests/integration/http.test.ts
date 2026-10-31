@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'v
 import { getProfile } from '../../src/application/get-profile.ts'
 import { getPublicProfile } from '../../src/application/get-public-profile.ts'
 import { saveProfile } from '../../src/application/save-profile.ts'
+import { setFieldVisibility } from '../../src/application/set-field-visibility.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
 import { createApp, type UseCases } from '../../src/interface/http/app.ts'
 import type { Env } from '../../src/interface/http/context.ts'
@@ -54,7 +55,7 @@ const publishing = () => ({
 
 /** Every use case answering the same way — for an app whose use cases a test does not care about. */
 function everyUseCase(answer: () => Promise<never>): UseCases {
-  return { saveProfile: answer, getProfile: answer, getPublicProfile: answer }
+  return { saveProfile: answer, getProfile: answer, getPublicProfile: answer, setFieldVisibility: answer }
 }
 
 type AppExtras = { logger?: Logger; readiness?: typeof alwaysReady }
@@ -80,6 +81,7 @@ beforeAll(async () => {
       saveProfile: saveProfile(repository, publishing()),
       getProfile: getProfile(repository),
       getPublicProfile: getPublicProfile(repository),
+      setFieldVisibility: setFieldVisibility(repository, publishing()),
     },
     logger: pino({ level: 'silent' }),
     authentication: identity.settings,
@@ -386,6 +388,93 @@ describe('GET /api/v1/runners/{id} — getPublicProfile', () => {
   })
 })
 
+describe('PUT /api/v1/me/profile/visibility — setFieldVisibility', () => {
+  const hide = (id: string, body: unknown): Promise<Response> =>
+    as(id, `${ME}/visibility`, { method: 'PUT', body: JSON.stringify(body) })
+  const full = { ...minimal, bio: 'Chasing a sub-2 half.', usualDistance: '5–10 km', gear: ['Pegasus 41'] }
+
+  it('200 replaces the hidden set, and the owner still sees every field', async () => {
+    await givenAProfile(NOK, full)
+    const response = await hide(NOK, { hiddenFields: ['gear', 'bio', 'pace'] })
+    const body = await bodyOf(response)
+    await expectContract('setFieldVisibility', 200, response)
+
+    expectSchema('Profile', body)
+    expect(body).toMatchObject({ hiddenFields: ['bio', 'pace', 'gear'], bio: full.bio, paceMin: 7, gear: ['Pegasus 41'] })
+  })
+
+  it('makes a hidden field null on the card — to another runner and to its owner alike', async () => {
+    await givenAProfile(NOK, full)
+    await hide(NOK, { hiddenFields: ['bio', 'pace', 'gear'] })
+
+    for (const reader of [BEAM, NOK]) {
+      const response = await as(reader, runner(NOK))
+      const body = await bodyOf(response)
+      await expectContract('getPublicProfile', 200, response)
+      expect(body).toMatchObject({ bio: null, paceMin: null, paceMax: null, gear: null })
+      expect(body).toMatchObject({ name: 'Nok', area: 'Lumphini Park', areaCell: minimalCell, usualDistance: '5–10 km' })
+    }
+  })
+
+  it('200 with [] reveals everything again', async () => {
+    await givenAProfile(NOK, full)
+    await hide(NOK, { hiddenFields: ['bio'] })
+    const response = await hide(NOK, { hiddenFields: [] })
+    await expectContract('setFieldVisibility', 200, response)
+    expect((await bodyOf(await as(BEAM, runner(NOK))))['bio']).toBe(full.bio)
+  })
+
+  it('keeps the set through a later save — a save never un-hides', async () => {
+    await givenAProfile(NOK, full)
+    await hide(NOK, { hiddenFields: ['bio'] })
+    const saved = await bodyOf(await save(NOK, { ...full, name: 'Nok R.' }))
+
+    expect(saved['hiddenFields']).toEqual(['bio'])
+    expect((await bodyOf(await as(BEAM, runner(NOK))))['bio']).toBeNull()
+  })
+
+  it('422 when a name repeats', async () => {
+    await givenAProfile()
+    const response = await hide(NOK, { hiddenFields: ['bio', 'bio'] })
+    const body = await bodyOf(response)
+    await expectContract('setFieldVisibility', 422, response)
+    expect(body).toMatchObject({ fieldErrors: { hiddenFields: expect.any(String) } })
+  })
+
+  it('422 for a field that is always shown', async () => {
+    await givenAProfile()
+    const response = await hide(NOK, { hiddenFields: ['name'] })
+    const body = await bodyOf(response)
+    await expectContract('setFieldVisibility', 422, response)
+    expect(body).toMatchObject({ fieldErrors: { hiddenFields: expect.any(String) } })
+  })
+
+  it('422 when the body has no hiddenFields', async () => {
+    await givenAProfile()
+    await expectContract('setFieldVisibility', 422, await hide(NOK, { hidden: ['bio'] }))
+  })
+
+  it('404 before the first save', async () => {
+    await expectContract('setFieldVisibility', 404, await hide(NOK, { hiddenFields: ['bio'] }))
+  })
+
+  it('401 without a token', async () => {
+    const response = await app.request(`${ME}/visibility`, {
+      method: 'PUT',
+      body: JSON.stringify({ hiddenFields: [] }),
+      headers: { 'content-type': 'application/json' },
+    })
+    await expectContract('setFieldVisibility', 401, response)
+  })
+
+  it('publishes ProfileUpdated with the new set', async () => {
+    await givenAProfile()
+    events.published.length = 0
+    await hide(NOK, { hiddenFields: ['gear'] })
+    expect(events.published.at(-1)?.profile.hiddenFields).toEqual(['gear'])
+  })
+})
+
 describe('the old paths are gone', () => {
   it.each([
     ['GET', `/v1/profiles/${NOK}`],
@@ -472,6 +561,7 @@ describe('an unexpected failure', () => {
     ['getProfile', 'GET', ME, undefined],
     ['saveProfile', 'PUT', ME, JSON.stringify(minimal)],
     ['getPublicProfile', 'GET', runner(NOK), undefined],
+    ['setFieldVisibility', 'PUT', `${ME}/visibility`, JSON.stringify({ hiddenFields: [] })],
   ] as const)('%s becomes a 500 matching the default response', async (operationId, method, path, body) => {
     const token = await identity.tokenFor(NOK)
     const response = await brokenApp().request(path, {

@@ -1,7 +1,8 @@
 import { toExperience } from '../../domain/experience.ts'
+import { type HiddenField, toHiddenField } from '../../domain/hidden-field.ts'
 import type { ProfileContent } from '../../domain/profile.ts'
 import { toUsualDistance } from '../../domain/usual-distance.ts'
-import type { ProfileSaveBody } from './validators.ts'
+import type { ProfileSaveBody, VisibilityBody } from './validators.ts'
 
 /**
  * Validated body → domain types. Nothing is renamed: the body's names are the domain's.
@@ -27,4 +28,9 @@ export function toContent(body: ProfileSaveBody): ProfileContent {
     }),
     ...(body.gear !== undefined && { gear: body.gear }),
   }
+}
+
+/** The names a runner asked to hide, narrowed by the domain's own list. */
+export function toHiddenFields(body: VisibilityBody): HiddenField[] {
+  return body.hiddenFields.map(toHiddenField)
 }

@@ -57,6 +57,38 @@ paths:
         '422': { $ref: '#/components/responses/ValidationFailed' }   # malformed, the wrong shape, or a value that breaks a rule in domain.md §4
         default: { $ref: '#/components/responses/InternalError' }
 
+  /api/v1/me/profile/visibility:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+
+    put:
+      operationId: setFieldVisibility
+      summary: Choose which fields other runners see
+      description: >-
+        Replaces the set of hidden fields. A hidden field is `null` on the public card — to other
+        runners, to `ProfileUpdated` and to its owner reading their own card — while the owner's
+        view still shows everything. A save never touches this set, so saving can never reveal a
+        field.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: The whole new set; send `[]` to show everything. Unknown fields are ignored.
+              required: [hiddenFields]
+              properties:
+                hiddenFields:
+                  type: array
+                  uniqueItems: true
+                  items: { $ref: '#/components/schemas/HideableField' }
+      responses:
+        '200': { $ref: '#/components/responses/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # you have not saved one yet
+        '422': { $ref: '#/components/responses/ValidationFailed' }   # an unknown name, a repeat, or no hiddenFields
+        default: { $ref: '#/components/responses/InternalError' }
+
   /api/v1/runners/{id}:
     parameters:
       - name: id

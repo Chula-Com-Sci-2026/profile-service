@@ -41,3 +41,10 @@ export const profileSave = z.object({
 })
 
 export type ProfileSaveBody = z.infer<typeof profileSave>
+
+/** The visibility route's body. `uniqueItems: true` here too; which names may be hidden is §4's. */
+export const visibility = z.object({
+  hiddenFields: z.array(z.string()).refine(noRepeats((field: string) => field), 'must not repeat a field'),
+})
+
+export type VisibilityBody = z.infer<typeof visibility>

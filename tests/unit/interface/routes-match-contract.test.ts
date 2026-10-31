@@ -25,6 +25,7 @@ const app = createApp({
     saveProfile: rejects,
     getProfile: rejects,
     getPublicProfile: rejects,
+    setFieldVisibility: rejects,
   },
   logger: pino({ level: 'silent' }),
   authentication: { secret: 'secret', issuer: 'issuer', audience: 'audience' },

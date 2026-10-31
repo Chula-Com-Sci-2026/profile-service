@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { InvalidProfileFieldError } from '../../../src/domain/errors.ts'
 import { HIDEABLE_FIELDS, type HiddenField } from '../../../src/domain/hidden-field.ts'
 import { Profile, type ProfileFields } from '../../../src/domain/profile.ts'
 
@@ -118,5 +119,35 @@ describe('Profile.publicCard — what other runners see', () => {
 
   it('is frozen', () => {
     expect(Object.isFrozen(everything().publicCard())).toBe(true)
+  })
+})
+
+describe('Profile.setFieldVisibility — domain.md §3 setFieldVisibility()', () => {
+  it('replaces the hidden set, in declared order', () => {
+    expect(everything().setFieldVisibility(['gear', 'bio']).hiddenFields).toEqual(['bio', 'gear'])
+  })
+
+  it('reveals everything with an empty set', () => {
+    expect(everything({ hiddenFields: ['bio', 'pace'] }).setFieldVisibility([]).hiddenFields).toEqual([])
+  })
+
+  it('changes nothing else, and returns a new frozen profile', () => {
+    const before = everything()
+    const after = before.setFieldVisibility(['gear'])
+    expect({ ...after, hiddenFields: [] }).toEqual({ ...before, hiddenFields: [] })
+    expect(after).not.toBe(before)
+    expect(Object.isFrozen(after)).toBe(true)
+  })
+
+  it('refuses a field that is always shown', () => {
+    expect(() => everything().setFieldVisibility(['name' as HiddenField])).toThrow(InvalidProfileFieldError)
+    expect(() => everything().setFieldVisibility(['name' as HiddenField])).toThrow(
+      expect.objectContaining({ field: 'hiddenFields' }),
+    )
+  })
+
+  it('hides both ends of the pace from the card', () => {
+    const card = everything().setFieldVisibility(['pace']).publicCard()
+    expect([card.paceMin, card.paceMax]).toEqual([null, null])
   })
 })

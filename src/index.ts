@@ -5,6 +5,7 @@ import { getProfile } from './application/get-profile.ts'
 import { getPublicProfile } from './application/get-public-profile.ts'
 import type { Publishing } from './application/publishing.ts'
 import { saveProfile } from './application/save-profile.ts'
+import { setFieldVisibility } from './application/set-field-visibility.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
@@ -68,6 +69,7 @@ const app = createApp({
     saveProfile: saveProfile(repository, publishing),
     getProfile: getProfile(repository),
     getPublicProfile: getPublicProfile(repository),
+    setFieldVisibility: setFieldVisibility(repository, publishing),
   },
   logger,
   authentication: config.accessToken,

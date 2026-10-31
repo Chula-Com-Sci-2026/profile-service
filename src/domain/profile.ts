@@ -185,6 +185,14 @@ export class Profile {
     })
   }
 
+  /**
+   * Which fields other runners see — domain.md §3 `setFieldVisibility()`. Replaces the hidden set
+   * whole and changes nothing else; §4's rule on which names may be hidden is the constructor's.
+   */
+  setFieldVisibility(hiddenFields: readonly HiddenField[]): Profile {
+    return new Profile({ ...this.#fields(), hiddenFields })
+  }
+
   /** The point as other runners see it — domain.md §4 "Area cells". Worked out, never stored. */
   areaCell(): AreaCell {
     return new AreaCell(this.latitude, this.longitude)
