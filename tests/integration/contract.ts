@@ -80,9 +80,43 @@ function validator(pointer: string): ValidateFunction {
   return fresh
 }
 
+/** The header every response carries: the request's correlation id (NFR-7.4). */
+const CORRELATION_HEADER = 'X-Correlation-Id'
+
 /**
- * Asserts the response is the status openapi.yaml documents, carries a media type it
- * documents, and has a body its schema accepts.
+ * Every response must document the correlation header, and every header a response documents is
+ * checked: present when `required`, and matching its schema when sent. The coverage assertion
+ * makes every documented response run through here, so "echoed on every response" is held for
+ * all of them, not promised.
+ */
+function expectHeaders(operationId: string, status: number, pointer: string, response: Response): void {
+  const headers = (at(pointer)?.['headers'] ?? {}) as Node
+  expect(Object.keys(headers), `${operationId} ${status} documents ${CORRELATION_HEADER}`).toContain(
+    CORRELATION_HEADER,
+  )
+
+  for (const [name, declared] of Object.entries(headers)) {
+    const ref = (declared as Node)['$ref']
+    const headerPointer = typeof ref === 'string' ? ref.slice(1) : `${pointer}/headers/${escape(name)}`
+    const value = response.headers.get(name)
+    if (at(headerPointer)?.['required'] === true) {
+      expect(value, `${operationId} ${status} sends ${name}`).not.toBeNull()
+    }
+    if (value === null) continue
+
+    const validate = validator(`${headerPointer}/schema`)
+    if (!validate(value)) {
+      throw new Error(
+        `${operationId} ${status} sent ${name}: ${JSON.stringify(value)}, which broke the contract: ` +
+          ajv.errorsText(validate.errors),
+      )
+    }
+  }
+}
+
+/**
+ * Asserts the response is the status openapi.yaml documents, carries the headers and a media type
+ * it documents, and has a body its schema accepts.
  */
 export async function expectContract(
   operationId: string,
@@ -92,6 +126,7 @@ export async function expectContract(
   expect(response.status, `status for ${operationId}`).toBe(status)
 
   const pointer = responsePointer(operationId, status)
+  expectHeaders(operationId, status, pointer, response)
   const content = at(pointer)?.['content'] as Node | undefined
 
   if (content === undefined) {

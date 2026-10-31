@@ -63,7 +63,7 @@ const publishing = {
             clientId: eventSettings.clientId,
             clientSecret: eventSettings.clientSecret,
           }),
-          currentRequestId: () => undefined,
+          currentCorrelationId: () => undefined,
         }),
   onUndelivered: (userId: string, error: unknown) => {
     console.error(`the event for ${userId} was not delivered:`, error instanceof Error ? error.message : error)

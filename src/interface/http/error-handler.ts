@@ -9,6 +9,7 @@ import {
 } from '../../domain/errors.ts'
 import type { Env } from './context.ts'
 import { ForbiddenError, MalformedBodyError, UnauthorizedError } from './errors.ts'
+import { correlationIdOf } from './request-context.ts'
 
 /** RFC 9457 problem details. `detail` is human prose — openapi.yaml says do not parse it. */
 type Problem = { title: string; status: ContentfulStatusCode; detail?: string }
@@ -58,6 +59,7 @@ function problemFor(error: Error): Problem | undefined {
  */
 export function errorHandler(base: Logger): ErrorHandler<Env> {
   return (error, c) => {
+  correlationIdOf(c)
   const problem = problemFor(error)
 
   if (problem === undefined) {
@@ -76,7 +78,9 @@ export function errorHandler(base: Logger): ErrorHandler<Env> {
 }
 
 /** An unmatched path, in the same shape as every other error this service returns. */
-export const notFoundHandler: NotFoundHandler<Env> = (c) =>
-  c.body(JSON.stringify({ title: 'Not found', status: 404 }), 404, {
+export const notFoundHandler: NotFoundHandler<Env> = (c) => {
+  correlationIdOf(c)
+  return c.body(JSON.stringify({ title: 'Not found', status: 404 }), 404, {
     'content-type': 'application/problem+json',
   })
+}

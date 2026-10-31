@@ -16,7 +16,7 @@ import { logOrphan } from './infrastructure/log-orphan.ts'
 import { createAvatarStorage } from './infrastructure/minio-avatar-storage.ts'
 import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
 import { createApp } from './interface/http/app.ts'
-import { currentRequestId } from './interface/http/request-context.ts'
+import { currentCorrelationId } from './interface/http/request-context.ts'
 
 /**
  * The composition root — the one file that knows every layer exists.
@@ -55,11 +55,11 @@ const events =
           clientId: config.events.clientId,
           clientSecret: config.events.clientSecret,
         }),
-        currentRequestId,
+        currentCorrelationId,
       })
 if (config.events === undefined) logger.info('no EVENT_SUBSCRIBERS configured: profile events are not published')
 
-const publishing: Publishing = { events, onUndelivered: logUndelivered(logger, currentRequestId) }
+const publishing: Publishing = { events, onUndelivered: logUndelivered(logger, currentCorrelationId) }
 
 /** Flipped before anything stops accepting, so /ready answers 503 first. */
 let draining = false
@@ -71,14 +71,14 @@ const app = createApp({
     updateProfile: updateProfile(
       repository,
       avatars,
-      logOrphan(logger, currentRequestId, 'an avatar object was orphaned by a profile change'),
+      logOrphan(logger, currentCorrelationId, 'an avatar object was orphaned by a profile change'),
       publishing,
     ),
     // The profile is gone and its images are not — logged and tolerated, see logOrphan.
     deleteProfile: deleteProfile(
       repository,
       avatars,
-      logOrphan(logger, currentRequestId, 'avatar objects orphaned after deleting a profile'),
+      logOrphan(logger, currentCorrelationId, 'avatar objects orphaned after deleting a profile'),
       publishing,
     ),
     createAvatarUpload: createAvatarUpload(repository, avatars),

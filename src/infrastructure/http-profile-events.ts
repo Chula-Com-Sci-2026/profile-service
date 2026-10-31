@@ -16,7 +16,7 @@ export type HttpProfileEventsOptions = {
   subscribers: readonly string[]
   tokens: ServiceTokens
   /** The correlation id of the request being served, if any (NFR-7.4). */
-  currentRequestId: () => string | undefined
+  currentCorrelationId: () => string | undefined
   /** Test seams. */
   timeoutMs?: number
   backoffMs?: readonly number[]
@@ -38,7 +38,7 @@ export class EventNotDeliveredError extends Error {
   readonly subscriber: string
   readonly attempts: number
   readonly status: number | undefined
-  readonly requestId: string
+  readonly correlationId: string
   readonly stage: FailedStep['stage']
 
   constructor(
@@ -46,7 +46,7 @@ export class EventNotDeliveredError extends Error {
     subscriber: string,
     attempts: number,
     status: number | undefined,
-    requestId: string,
+    correlationId: string,
     failure: FailedStep,
   ) {
     super(
@@ -60,7 +60,7 @@ export class EventNotDeliveredError extends Error {
     this.subscriber = subscriber
     this.attempts = attempts
     this.status = status
-    this.requestId = requestId
+    this.correlationId = correlationId
     this.stage = failure.stage
   }
 }
@@ -81,7 +81,7 @@ function retryable(status: number): boolean {
 async function deliver(
   event: CloudEvent,
   subscriber: string,
-  requestId: string,
+  correlationId: string,
   options: HttpProfileEventsOptions,
 ): Promise<void> {
   const waits = options.backoffMs ?? DELIVERY.backoffMs
@@ -111,7 +111,7 @@ async function deliver(
         headers: {
           authorization: `Bearer ${token}`,
           'content-type': 'application/cloudevents+json',
-          'x-request-id': requestId,
+          'x-correlation-id': correlationId,
         },
         body: JSON.stringify(event),
         signal,
@@ -132,7 +132,7 @@ async function deliver(
     }
   }
 
-  throw new EventNotDeliveredError(event, subscriber, attempt, status, requestId, failure)
+  throw new EventNotDeliveredError(event, subscriber, attempt, status, correlationId, failure)
 }
 
 /**
@@ -142,9 +142,9 @@ async function deliver(
  */
 export function httpProfileEvents(options: HttpProfileEventsOptions): ProfileEvents {
   async function publish(event: CloudEvent): Promise<void> {
-    const requestId = options.currentRequestId() ?? randomUUID()
+    const correlationId = options.currentCorrelationId() ?? randomUUID()
     const results = await Promise.allSettled(
-      options.subscribers.map((subscriber) => deliver(event, subscriber, requestId, options)),
+      options.subscribers.map((subscriber) => deliver(event, subscriber, correlationId, options)),
     )
     // Each subscriber that failed is its own outage, so each is reported: one failure as itself,
     // several as an AggregateError that logUndelivered writes out one line apiece.
@@ -163,15 +163,15 @@ export function httpProfileEvents(options: HttpProfileEventsOptions): ProfileEve
 export type ErrorLog = { error: (fields: object, message: string) => void }
 
 /**
- * The log line for an event no subscriber accepted. The request id goes at the top level, where
- * every other line of the request has it, so one query finds the request and its lost event
+ * The log line for an event no subscriber accepted. The correlation id goes at the top level,
+ * where every other line of the request has it, so one query finds the request and its lost event
  * (NFR-7.4). The error names the event, the subscriber and the failing step — never the profile.
  */
-export function logUndelivered(log: ErrorLog, currentRequestId: () => string | undefined) {
+export function logUndelivered(log: ErrorLog, currentCorrelationId: () => string | undefined) {
   return (userId: string, error: unknown): void => {
     for (const failure of error instanceof AggregateError ? error.errors : [error]) {
-      const requestId = failure instanceof EventNotDeliveredError ? failure.requestId : currentRequestId()
-      log.error({ err: failure, userId, requestId }, 'a profile event was not delivered')
+      const correlationId = failure instanceof EventNotDeliveredError ? failure.correlationId : currentCorrelationId()
+      log.error({ err: failure, userId, correlationId }, 'a profile event was not delivered')
     }
   }
 }

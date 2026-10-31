@@ -46,12 +46,12 @@ function tokens(token: () => Promise<string> = async () => 't1') {
 const fast = { backoffMs: [0, 0], timeoutMs: 100 }
 
 describe('httpProfileEvents — delivering', () => {
-  it('POSTs the CloudEvent with the service token and the request id', async () => {
+  it('POSTs the CloudEvent with the service token and the correlation id', async () => {
     const server = await discovery(() => ({ status: 202 }))
     const publisher = httpProfileEvents({
       subscribers: [server.url],
       tokens: tokens().fake,
-      currentRequestId: () => 'abc123',
+      currentCorrelationId: () => 'abcdef01-2345-4678-89ab-cdef01234567',
       ...fast,
     })
 
@@ -60,22 +60,23 @@ describe('httpProfileEvents — delivering', () => {
     const [request] = server.received
     expect(request?.headers['authorization']).toBe('Bearer t1')
     expect(request?.headers['content-type']).toBe('application/cloudevents+json')
-    expect(request?.headers['x-request-id']).toBe('abc123')
+    expect(request?.headers['x-correlation-id']).toBe('abcdef01-2345-4678-89ab-cdef01234567')
+    expect(request?.headers['x-request-id']).toBeUndefined()
     expect(JSON.parse(request?.body ?? '{}')).toMatchObject({ type: 'ProfileUpdated', subject: '7f3a9c2e15' })
   })
 
-  it('mints a request id when there is no request behind the event', async () => {
+  it('mints a correlation id when there is no request behind the event', async () => {
     const server = await discovery(() => ({ status: 204 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => undefined, ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => undefined, ...fast })
 
     await publisher.updated(nok)
 
-    expect(server.received[0]?.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/)
+    expect(server.received[0]?.headers['x-correlation-id']).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it('sends ProfileDeleted naming the runner', async () => {
     const server = await discovery(() => ({ status: 200 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
 
     await publisher.deleted('7f3a9c2e15')
 
@@ -85,7 +86,7 @@ describe('httpProfileEvents — delivering', () => {
   it('gives every subscriber the same event, so each can deduplicate by id', async () => {
     const one = await discovery(() => ({ status: 202 }))
     const two = await discovery(() => ({ status: 202 }))
-    const publisher = httpProfileEvents({ subscribers: [one.url, two.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [one.url, two.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
 
     await publisher.updated(nok)
 
@@ -96,7 +97,7 @@ describe('httpProfileEvents — delivering', () => {
 describe('httpProfileEvents — retrying (ADR-0019: a short timeout and a few retries)', () => {
   it('delivers on a later attempt after a 503', async () => {
     const server = await discovery((index) => ({ status: index === 0 ? 503 : 202 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
 
     await publisher.updated(nok)
 
@@ -105,12 +106,12 @@ describe('httpProfileEvents — retrying (ADR-0019: a short timeout and a few re
 
   it('gives up after three attempts, saying what was lost and nothing of the profile', async () => {
     const server = await discovery(() => ({ status: 503 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'abc123', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'abc123', ...fast })
 
     const error = await publisher.updated(nok).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(EventNotDeliveredError)
-    expect(error).toMatchObject({ eventType: 'ProfileUpdated', subject: '7f3a9c2e15', attempts: 3, status: 503, requestId: 'abc123' })
+    expect(error).toMatchObject({ eventType: 'ProfileUpdated', subject: '7f3a9c2e15', attempts: 3, status: 503, correlationId: 'abc123' })
     const logged = JSON.stringify(stdSerializers.err(error as Error))
     expect(logged).not.toContain('13.73')
     expect(logged).not.toContain('Nok')
@@ -119,7 +120,7 @@ describe('httpProfileEvents — retrying (ADR-0019: a short timeout and a few re
 
   it('does not retry a 400 — asking again will not change the answer', async () => {
     const server = await discovery(() => ({ status: 400 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
 
     await expect(publisher.updated(nok)).rejects.toMatchObject({ attempts: 1, status: 400 })
     expect(server.received).toHaveLength(1)
@@ -128,7 +129,7 @@ describe('httpProfileEvents — retrying (ADR-0019: a short timeout and a few re
   it('on a 401, forgets the token and tries again with a fresh one', async () => {
     const server = await discovery((index) => ({ status: index === 0 ? 401 : 204 }))
     const { fake, asked } = tokens()
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: fake, currentCorrelationId: () => 'r', ...fast })
 
     await publisher.updated(nok)
 
@@ -138,7 +139,7 @@ describe('httpProfileEvents — retrying (ADR-0019: a short timeout and a few re
 
   it('holds the request for at most three timeouts when the subscriber hangs', async () => {
     const server = await discovery(() => 'hang')
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
 
     const started = Date.now()
     await expect(publisher.updated(nok)).rejects.toMatchObject({ attempts: 3, status: undefined })
@@ -150,7 +151,7 @@ describe('httpProfileEvents — retrying (ADR-0019: a short timeout and a few re
     const failing = tokens(async () => {
       throw new Error('Identity is down')
     })
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: failing.fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: failing.fake, currentCorrelationId: () => 'r', ...fast })
 
     await expect(publisher.updated(nok)).rejects.toMatchObject({ attempts: 3 })
     expect(server.received).toHaveLength(0)
@@ -163,7 +164,7 @@ describe('httpProfileEvents — saying which step failed', () => {
     const refusing = tokens(async () => {
       throw new ServiceTokenError('Identity refused a service token: 401')
     })
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: refusing.fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: refusing.fake, currentCorrelationId: () => 'r', ...fast })
 
     const error = await publisher.updated(nok).catch((e: unknown) => e)
 
@@ -173,7 +174,7 @@ describe('httpProfileEvents — saying which step failed', () => {
 
   it('blames delivery when the subscriber keeps refusing', async () => {
     const server = await discovery(() => ({ status: 503 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
 
     const error = await publisher.updated(nok).catch((e: unknown) => e)
 
@@ -190,7 +191,7 @@ describe('httpProfileEvents — one deadline per attempt', () => {
     const publisher = httpProfileEvents({
       subscribers: [server.url],
       tokens: identityServiceTokens({ tokenUrl: identity.url, clientId: 'profile-service', clientSecret: 'secret' }),
-      currentRequestId: () => 'r',
+      currentCorrelationId: () => 'r',
       ...fast,
     })
 
@@ -201,9 +202,9 @@ describe('httpProfileEvents — one deadline per attempt', () => {
 })
 
 describe('logUndelivered — the log line for a lost event', () => {
-  it('carries the request id at the top level, so it joins the request that caused it (NFR-7.4)', async () => {
+  it('carries the correlation id at the top level, so it joins the request that caused it (NFR-7.4)', async () => {
     const server = await discovery(() => ({ status: 503 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'abc123', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'abc123', ...fast })
     const error = await publisher.updated(nok).catch((e: unknown) => e)
     const lines: { fields: Record<string, unknown>; message: string }[] = []
 
@@ -213,21 +214,21 @@ describe('logUndelivered — the log line for a lost event', () => {
     )
 
     expect(lines).toEqual([
-      { fields: { err: error, userId: '7f3a9c2e15', requestId: 'abc123' }, message: 'a profile event was not delivered' },
+      { fields: { err: error, userId: '7f3a9c2e15', correlationId: 'abc123' }, message: 'a profile event was not delivered' },
     ])
   })
 
-  it('falls back to the current request id for any other failure', () => {
+  it('falls back to the current correlation id for any other failure', () => {
     const lines: Record<string, unknown>[] = []
     logUndelivered({ error: (fields) => lines.push(fields as Record<string, unknown>) }, () => 'xyz789')('7f3a9c2e15', new Error('boom'))
-    expect(lines[0]?.['requestId']).toBe('xyz789')
+    expect(lines[0]?.['correlationId']).toBe('xyz789')
   })
 })
 
 describe('EventNotDeliveredError — as pino writes it', () => {
   it('keeps the event type, which pino would overwrite with the class name under `type`', async () => {
     const server = await discovery(() => ({ status: 400 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
 
     const error = await publisher.updated(nok).catch((e: unknown) => e)
     const logged = stdSerializers.err(error as Error) as unknown as Record<string, unknown>
@@ -241,7 +242,7 @@ describe('httpProfileEvents — several subscribers failing', () => {
   it('reports every subscriber that failed, not only the first', async () => {
     const one = await discovery(() => ({ status: 503 }))
     const two = await discovery(() => ({ status: 400 }))
-    const publisher = httpProfileEvents({ subscribers: [one.url, two.url], tokens: tokens().fake, currentRequestId: () => 'abc123', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [one.url, two.url], tokens: tokens().fake, currentCorrelationId: () => 'abc123', ...fast })
 
     const error = await publisher.updated(nok).catch((e: unknown) => e)
 
@@ -254,15 +255,15 @@ describe('httpProfileEvents — several subscribers failing', () => {
   it('still reports a single failure as itself', async () => {
     const up = await discovery(() => ({ status: 202 }))
     const down = await discovery(() => ({ status: 400 }))
-    const publisher = httpProfileEvents({ subscribers: [up.url, down.url], tokens: tokens().fake, currentRequestId: () => 'r', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [up.url, down.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
 
     await expect(publisher.updated(nok)).rejects.toBeInstanceOf(EventNotDeliveredError)
   })
 
-  it('logs one line per subscriber that failed, each with the request id', async () => {
+  it('logs one line per subscriber that failed, each with the correlation id', async () => {
     const one = await discovery(() => ({ status: 503 }))
     const two = await discovery(() => ({ status: 503 }))
-    const publisher = httpProfileEvents({ subscribers: [one.url, two.url], tokens: tokens().fake, currentRequestId: () => 'abc123', ...fast })
+    const publisher = httpProfileEvents({ subscribers: [one.url, two.url], tokens: tokens().fake, currentCorrelationId: () => 'abc123', ...fast })
     const error = await publisher.updated(nok).catch((e: unknown) => e)
     const lines: Record<string, unknown>[] = []
 
@@ -270,6 +271,6 @@ describe('httpProfileEvents — several subscribers failing', () => {
 
     expect(lines).toHaveLength(2)
     expect(lines.map((line) => (line['err'] as EventNotDeliveredError).subscriber)).toEqual([one.url, two.url])
-    expect(lines.map((line) => line['requestId'])).toEqual(['abc123', 'abc123'])
+    expect(lines.map((line) => line['correlationId'])).toEqual(['abc123', 'abc123'])
   })
 })

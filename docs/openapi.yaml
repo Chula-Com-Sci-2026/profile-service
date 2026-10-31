@@ -35,6 +35,7 @@ paths:
           create, change and delete. On read, a value that is no runner's simply matches no
           profile and answers 404.
         schema: { type: string, minLength: 1, maxLength: 64 }
+      - $ref: '#/components/parameters/CorrelationId'
 
     put:
       operationId: createProfile
@@ -63,6 +64,7 @@ paths:
       responses:
         '200':
           description: The whole profile for its owner; the public card for anyone else
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             application/json:
               schema:
@@ -95,7 +97,9 @@ paths:
       operationId: deleteProfile
       summary: Delete a runner's profile, permanently
       responses:
-        '204': { description: Deleted }
+        '204':
+          description: Deleted
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
         '401': { $ref: '#/components/responses/Problem' }   # no token, or it does not verify
         '403': { $ref: '#/components/responses/Problem' }   # only the owner may delete a profile
         '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
@@ -107,6 +111,7 @@ paths:
         in: path
         required: true
         schema: { type: string, minLength: 1, maxLength: 64 }
+      - $ref: '#/components/parameters/CorrelationId'
 
     post:
       operationId: createAvatarUpload
@@ -124,6 +129,7 @@ paths:
       responses:
         '201':
           description: An upload is authorised
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             application/json:
               schema:
@@ -145,6 +151,8 @@ paths:
         default: { $ref: '#/components/responses/Problem' }
 
   /up:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
     get:
       operationId: liveness
       summary: Liveness probe
@@ -158,6 +166,7 @@ paths:
       responses:
         '200':
           description: Alive
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             application/json:
               schema:
@@ -167,6 +176,8 @@ paths:
                   status: { type: string, const: ok }
 
   /ready:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
     get:
       operationId: readiness
       summary: Readiness probe
@@ -179,6 +190,7 @@ paths:
       responses:
         '200':
           description: Ready to serve
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             application/json:
               schema:
@@ -188,6 +200,7 @@ paths:
                   status: { type: string, const: ready }
         '503':
           description: Not serving — shutting down, or the database is out of reach
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             application/json:
               schema:
@@ -197,6 +210,8 @@ paths:
                   status: { type: string, enum: [draining, unavailable] }
 
   /docs:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
     get:
       operationId: documentation
       summary: This contract, rendered
@@ -209,10 +224,13 @@ paths:
       responses:
         '200':
           description: The documentation page
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             text/html: {}
 
   /openapi.yaml:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
     get:
       operationId: contract
       summary: This contract, as a file
@@ -223,6 +241,7 @@ paths:
       responses:
         '200':
           description: The OpenAPI document
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
           content:
             application/yaml: {}
         default: { $ref: '#/components/responses/Problem' }
@@ -246,11 +265,11 @@ webhooks:
       security:
         - serviceToken: []
       parameters:
-        - name: X-Request-Id
+        - name: X-Correlation-Id
           in: header
           required: true
-          description: The correlation id of the request that caused the event, or a fresh one.
-          schema: { type: string, minLength: 1 }
+          description: The correlation id of the request that caused the event, or a fresh one when no request did.
+          schema: { $ref: '#/components/schemas/CorrelationId' }
       requestBody:
         required: true
         content:
@@ -269,11 +288,11 @@ webhooks:
       security:
         - serviceToken: []
       parameters:
-        - name: X-Request-Id
+        - name: X-Correlation-Id
           in: header
           required: true
-          description: The correlation id of the request that caused the event, or a fresh one.
-          schema: { type: string, minLength: 1 }
+          description: The correlation id of the request that caused the event, or a fresh one when no request did.
+          schema: { $ref: '#/components/schemas/CorrelationId' }
       requestBody:
         required: true
         content:
@@ -310,15 +329,36 @@ components:
   responses:
     Profile:
       description: The profile
+      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Profile' }
 
     Problem:
       description: RFC 9457 problem details
+      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+
+  headers:
+    CorrelationId:
+      required: true
+      description: >-
+        This request's correlation id (NFR-7.4): the X-Correlation-Id it was sent, lowercased,
+        when that is a UUID; otherwise a fresh one. On every response, errors included.
+      schema: { $ref: '#/components/schemas/CorrelationId' }
+
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: >-
+        Joins this request to the one that caused it; a gateway forwards it. Kept when it is a
+        UUID (8-4-4-4-12 hex, any case), and lowercased; anything else is replaced by a fresh
+        one. Neither traceparent nor X-Request-Id is read.
+      schema: { type: string }
 
   schemas:
     ProfileFields:
@@ -440,6 +480,12 @@ components:
           description: >-
             Bangkok local time (UTC+7). early_morning 05:00–08:00 · morning 08:00–11:00 ·
             midday 11:00–14:00 · afternoon 14:00–17:00 · evening 17:00–20:00 · night 20:00–05:00
+
+    CorrelationId:
+      type: string
+      # A pattern rather than `format: uuid`, which the contract tests' Ajv ignores.
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      description: A UUID, lowercase.
 
     Problem:
       type: object

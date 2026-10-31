@@ -12,7 +12,7 @@ function recordingLog() {
 }
 
 describe('logOrphan', () => {
-  it('puts the request id at the top level, where every other line of the request has it (NFR-7.4)', () => {
+  it('puts the correlation id at the top level, where every other line of the request has it (NFR-7.4)', () => {
     const log = recordingLog()
     const failure = new Error('object storage is down')
 
@@ -20,18 +20,18 @@ describe('logOrphan', () => {
 
     expect(log.lines).toEqual([
       {
-        fields: { err: failure, userId: '7f3a9c2e15', requestId: 'req-1' },
+        fields: { err: failure, userId: '7f3a9c2e15', correlationId: 'req-1' },
         message: 'an avatar object was orphaned by a profile change',
       },
     ])
   })
 
-  it('logs without a request id outside a request, rather than inventing one', () => {
+  it('logs without a correlation id outside a request, rather than inventing one', () => {
     const log = recordingLog()
 
     logOrphan(log, () => undefined, 'avatar objects orphaned after deleting a profile')('7f3a9c2e15', new Error('x'))
 
     expect(log.lines[0]?.fields['userId']).toBe('7f3a9c2e15')
-    expect(log.lines[0]?.fields['requestId']).toBeUndefined()
+    expect(log.lines[0]?.fields['correlationId']).toBeUndefined()
   })
 })

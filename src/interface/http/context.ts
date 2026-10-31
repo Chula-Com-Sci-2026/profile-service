@@ -5,7 +5,7 @@ export type Caller = { id: string }
 
 /** What middleware puts on the request. No route, use case or domain object sees a header or a token. */
 export type Variables = {
-  requestId: string
+  correlationId: string
   log: Logger
   caller: Caller
 }

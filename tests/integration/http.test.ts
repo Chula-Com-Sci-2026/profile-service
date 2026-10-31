@@ -15,12 +15,14 @@ import { createApp } from '../../src/interface/http/app.ts'
 import type { Env } from '../../src/interface/http/context.ts'
 import { contractDocument } from '../../src/interface/http/docs.ts'
 import { errorHandler } from '../../src/interface/http/error-handler.ts'
-import { currentRequestId } from '../../src/interface/http/request-context.ts'
+import { currentCorrelationId } from '../../src/interface/http/request-context.ts'
 import { documentedResponses, exercised, expectContract, expectSchema } from './contract.ts'
 import { RecordingProfileEvents } from '../unit/application/profile-events-double.ts'
 import { anIdentity, type Identity } from './identity.ts'
 
 const alwaysReady = { isDraining: () => false, canServe: () => Promise.resolve(true) }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** The contract tests are about HTTP shape; the real adapter is exercised through compose. */
 const storage = {
@@ -44,13 +46,13 @@ let identity: Identity
 /** What the app published during the current test; reset before each. */
 let events: RecordingProfileEvents
 const undelivered: string[] = []
-let requestIdWhenPublished: string | undefined
+let correlationIdWhenPublished: string | undefined
 
 /** Reads `events` at call time, so each test sees a fresh recorder. */
 const publishing = () => ({
   events: {
     updated: (profile: Parameters<RecordingProfileEvents['updated']>[0]) => {
-      requestIdWhenPublished = currentRequestId()
+      correlationIdWhenPublished = currentCorrelationId()
       return events.updated(profile)
     },
     deleted: (userId: string) => events.deleted(userId),
@@ -99,7 +101,7 @@ beforeEach(async () => {
   await db.execute(sql`TRUNCATE profiles`)
   events = new RecordingProfileEvents()
   undelivered.length = 0
-  requestIdWhenPublished = undefined
+  correlationIdWhenPublished = undefined
 })
 
 const minimal = { displayName: 'Nok', birthYear: 1994, area: { latitude: 13.7314, longitude: 100.5414 } }
@@ -463,43 +465,64 @@ describe('GET /up', () => {
   })
 })
 
-describe('the request context', () => {
+describe('the correlation id — X-Correlation-Id', () => {
+  const given = 'abcdef01-2345-4678-89ab-cdef01234567'
+
   it('is current while the request is served, so the event publisher can pass it on (NFR-7.4)', async () => {
-    await put(NOK, minimal)
+    await givenAProfile()
     const response = await as(NOK, `/v1/profiles/${NOK}`, {
       method: 'PATCH',
       body: JSON.stringify({ displayName: 'Nok R.' }),
-      headers: { 'content-type': 'application/merge-patch+json', 'x-request-id': 'abc123' },
+      headers: { 'content-type': 'application/merge-patch+json', 'x-correlation-id': given.toUpperCase() },
     })
     expect(response.status).toBe(200)
-    expect(requestIdWhenPublished).toBe('abc123')
+    expect(correlationIdWhenPublished).toBe(given)
   })
 
   it('is gone once the request is over', () => {
-    expect(currentRequestId()).toBeUndefined()
+    expect(currentCorrelationId()).toBeUndefined()
   })
 
-  it('echoes a correlation id back', async () => {
-    const response = await app.request('/up')
-    expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)
+  it('keeps a UUID it is given, lowercased, and echoes it', async () => {
+    const response = await app.request('/up', { headers: { 'x-correlation-id': given.toUpperCase() } })
+    expect(response.headers.get('x-correlation-id')).toBe(given)
   })
 
-  it('mints one when the X-Request-Id it is given is empty — an empty id joins nothing', async () => {
-    const response = await app.request('/up', { headers: { 'x-request-id': '' } })
-    expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)
+  it('replaces a value that is not a UUID', async () => {
+    const response = await app.request('/up', { headers: { 'x-correlation-id': 'abc123' } })
+    expect(response.headers.get('x-correlation-id')).toMatch(UUID)
   })
 
-  it('carries a given X-Request-Id through', async () => {
-    const response = await app.request('/up', { headers: { 'x-request-id': 'abc123' } })
-    expect(response.headers.get('x-request-id')).toBe('abc123')
-  })
-
-  it('prefers the trace id from traceparent', async () => {
+  it('reads neither traceparent nor X-Request-Id, and writes no X-Request-Id', async () => {
     const traceId = '4bf92f3577b34da6a3ce929d0e0e4736'
     const response = await app.request('/up', {
-      headers: { traceparent: `00-${traceId}-00f067aa0ba902b7-01` },
+      headers: { traceparent: `00-${traceId}-00f067aa0ba902b7-01`, 'x-request-id': given },
     })
-    expect(response.headers.get('x-request-id')).toBe(traceId)
+    expect(response.headers.get('x-correlation-id')).not.toBe(given)
+    expect(response.headers.get('x-correlation-id')?.replaceAll('-', '')).not.toBe(traceId)
+    expect(response.headers.get('x-request-id')).toBeNull()
+  })
+
+  it('is on every log line of the request, as correlationId', async () => {
+    const lines: Record<string, unknown>[] = []
+    const logger = pino({ level: 'info' }, { write: (line: string) => void lines.push(JSON.parse(line) as Record<string, unknown>) })
+    const onFire = (): Promise<never> => Promise.reject(new Error('the pool is on fire'))
+    const logged = createApp({
+      useCases: { createProfile: onFire, getProfile: onFire, updateProfile: onFire, deleteProfile: onFire, createAvatarUpload: onFire },
+      logger,
+      authentication: identity.settings,
+      readiness: alwaysReady,
+    })
+    const token = await identity.tokenFor(NOK)
+    const response = await logged.request(`/v1/profiles/${NOK}`, {
+      headers: { authorization: `Bearer ${token}`, 'x-correlation-id': given },
+    })
+    expect(response.status).toBe(500)
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) {
+      expect(line['correlationId']).toBe(given)
+      expect('requestId' in line).toBe(false)
+    }
   })
 })
 
@@ -693,6 +716,7 @@ describe('an unmatched path', () => {
   it('answers in problem+json like every other error', async () => {
     const response = await as(NOK, '/v1/profiles')
     expect(response.status).toBe(404)
+    expect(response.headers.get('x-correlation-id')).toMatch(UUID)
     expect(response.headers.get('content-type')).toContain('application/problem+json')
     expect(await response.json()).toEqual({ title: 'Not found', status: 404 })
   })
