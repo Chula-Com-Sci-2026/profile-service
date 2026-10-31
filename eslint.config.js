@@ -6,8 +6,10 @@ import tseslint from 'typescript-eslint'
  *
  *   interface/http ──► application ──► domain ◄── infrastructure
  *
- * Only `src/index.ts`, the composition root, may reach across zones: it is the
- * one place that knows every layer exists.
+ * The zones cover the four layer directories, so the files directly under `src/` sit outside
+ * them: `index.ts`, the composition root and the one place that knows every layer exists, and
+ * the one-shot commands `migrate.ts` and `republish-events.ts`, which compose what they need the
+ * same way.
  */
 const zone = (files, groups, message) => ({
   files,

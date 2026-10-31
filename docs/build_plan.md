@@ -39,7 +39,7 @@ src/
 ├─ interface/http/   hono routes, middleware, zod validators, mappers
 ├─ migrate.ts        one-shot command: apply the migrations
 ├─ republish-events.ts one-shot command: every profile's ProfileUpdated, again
-└─ index.ts          composition root — the only file that knows every layer
+└─ index.ts          composition root — the only file that knows every layer; like the commands, outside the zones
 tests/
 ├─ unit/             no database, no network
 └─ integration/      real PostgreSQL and RabbitMQ, serial; globalSetup starts the containers
@@ -58,7 +58,7 @@ interface/http ──► application ──► domain ◄── infrastructure
 
 The point: the domain stays testable with no database and no HTTP, and swapping Drizzle touches one directory.
 
-`eslint.config.js` enforces this with per-directory `no-restricted-imports` zones, so a violation fails `npm run lint` with the layer's own rule as the message. `src/index.ts` is exempt — the composition root is the one place that knows every layer exists.
+`eslint.config.js` enforces this with per-directory `no-restricted-imports` zones, so a violation fails `npm run lint` with the layer's own rule as the message. The files directly under `src/` are outside the zones: `index.ts`, the composition root and the one place that knows every layer exists, and the two one-shot commands, which compose what they need the same way.
 
 ## Naming across layers
 
@@ -132,7 +132,7 @@ No database, no HTTP, no framework. Everything here comes from domain.md §3, §
 One file per use case, named exactly for domain.md §3's operations:
 
 ```
-saveProfile   setFieldVisibility   createPhotoUpload   attachPhoto   removePhoto   getProfile   getPublicProfile
+saveProfile   setFieldVisibility   createPhotoUpload   attachPhoto   removePhoto   getProfile   getPublicProfile   republishProfiles
 ```
 
 Each reads through the repository interface, and each that changes a profile writes through the `UnitOfWork` port — its write and its event in one transaction — never a concrete class. `saveProfile` takes a profile's content: the runner's answers replace what was there, and our two additions, usual distance and gear, are kept when left out. Those are domain rules, so they belong to `Profile.save()` from phase 1; the use case decides only whether this is the first save.
@@ -176,7 +176,7 @@ Order is error handler outermost, then request context, then auth, then routes �
 
 ### 5 — Wiring and seed
 
-- `src/index.ts` — composition root: config from environment, the base logger, one pool, routes, listen. It **calls** `infrastructure/`'s `config.ts` and `database.ts` rather than building either itself — `pg` and `drizzle-orm` stay behind that boundary, and "one pool" means one instance, not one construction site. The zones exempt `src/index.ts`, so this is the single file where "the ORM appears in `infrastructure/` and nowhere else" is on the honour system; the exemption is there to let the root see every layer, not to let it reach past one. The logger is constructed here and nowhere else — level from configuration, `redact` covering the `authorization` header so a bearer token never reaches a log line, and plain JSON to stdout. Shipping, rotating and prettifying are somebody else's process — the `dev` script gains a `| pino-pretty` in this phase, a pipe rather than a transport, since a transport would run pretty-printing inside this process
+- `src/index.ts` — composition root: config from environment, the base logger, one pool, routes, listen. It **calls** `infrastructure/`'s `config.ts` and `database.ts` rather than building either itself — `pg` and `drizzle-orm` stay behind that boundary, and "one pool" means one instance, not one construction site. The zones exempt the files directly under `src/` — this one and the two one-shot commands — so these are where "the ORM appears in `infrastructure/` and nowhere else" is on the honour system; the exemption is there to let the root see every layer, not to let it reach past one. The logger is constructed here and nowhere else — level from configuration, `redact` covering the `authorization` header so a bearer token never reaches a log line, and plain JSON to stdout. Shipping, rotating and prettifying are somebody else's process — the `dev` script gains a `| pino-pretty` in this phase, a pipe rather than a transport, since a transport would run pretty-printing inside this process
 - Config read once at startup; a missing `DATABASE_URL` or `ACCESS_TOKEN_SECRET` fails there, not on the first request. Every setting `.env.example` carries is validated in `config.ts` rather than trusted, `LOG_LEVEL` defaulting to `info` and set to `silent` under test. `JWT_ISSUER` and `JWT_AUDIENCE` default to the team's `cant-run-alone-local` and `cant-run-alone-services`
 - Graceful shutdown: stop accepting, close idle connections, stop the event relay and close the broker connection, end the pool, and give up after a deadline rather than hanging
 - `scripts/seed.ts` — reads `scripts/seed.json` and saves through `saveProfile` inside one transaction, so a row that breaks §4 fails at seed time rather than landing in the table, and each runner's `ProfileUpdated` is in the outbox when the rows commit. Refuses to run when `NODE_ENV=production`; it truncates `profiles` and `outbox` together first, so an old unsent event cannot go out after a reset

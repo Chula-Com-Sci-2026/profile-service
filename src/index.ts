@@ -27,7 +27,9 @@ import { currentCorrelationId } from './interface/http/request-context.ts'
  *
  * Everything below depends on an interface; something has to pick the implementations and
  * connect them, and that cannot be any of the layers without breaking the rule they follow.
- * This is the exception, and it is deliberately the only one.
+ * This is the exception. The one-shot commands beside it, `migrate.ts` and `republish-events.ts`,
+ * sit outside the zones for the same reason and compose only what they need; this is the one
+ * that knows every layer.
  */
 const config = loadConfig()
 

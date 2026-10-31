@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Runner-profile microservice. Node 24 · TypeScript · Hono · Drizzle/PostgreSQL · S3 storage.
+Runner-profile microservice. Node 24 · TypeScript · Hono · Drizzle/PostgreSQL · S3 storage · RabbitMQ.
 A demonstration of microservices + DDD, so architectural clarity outranks cleverness.
 
 ## Read first
@@ -18,7 +18,7 @@ A demonstration of microservices + DDD, so architectural clarity outranks clever
 ```bash
 npm run dev        # node --watch, pretty logs
 npm test           # unit, ~1s, no Docker
-npm run test:int   # integration — starts its own PostgreSQL via Testcontainers
+npm run test:int   # integration — starts its own PostgreSQL and RabbitMQ via Testcontainers
 npm run typecheck && npm run lint    # both must pass
 npm run build      # tsc -> dist/
 ```

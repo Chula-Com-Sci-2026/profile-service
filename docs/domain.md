@@ -84,7 +84,7 @@ Of the fields a runner fills in, `name`, the pace, `experience`, `area`, the poi
 
 ### Behaviour
 
-The team's operations, one application file each:
+The team's operations, and one of this service's own, one application file each:
 
 - **saveProfile()** — creates the runner's profile, or replaces it: the team's `createProfile()` and `updateProfile()`, reached through one save. The runner's answers are replaced whole: `name`, the pace, `experience`, `area`, the point and `availability` must all be given, and a `bio` left out is no bio. `usualDistance` and `gear` are kept when left out and cleared with `null` (gear with an empty list too). A save never changes `hiddenFields` or the photo, so it can never reveal or detach anything. The first save creates the profile with nothing hidden and no photo.
 - **setFieldVisibility()** — replaces the set of hidden fields.
@@ -93,6 +93,7 @@ The team's operations, one application file each:
 - **removePhoto()** — takes the photo off the profile.
 - **getProfile()** — the whole profile, for its owner.
 - **getPublicProfile()** — the public card, for anyone, its owner included.
+- **republishProfiles()** — sends every profile's ProfileUpdated again, each under the revision it already has, for a copy that has to be rebuilt (§1). It changes nothing, so no revision moves.
 - **publicCard()** — on the aggregate itself: the profile as other runners see it (§4). The one place field visibility is applied.
 
 Every operation that changes a profile raises its revision by one and publishes ProfileUpdated (§1) — even one that leaves every field as it was. `id` never changes. There is no way to list or search profiles, and none to delete one.
