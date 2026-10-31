@@ -20,7 +20,9 @@
 #   broker-admin-user,     a login that may create users on that broker, through its management
 #   broker-admin-password  API (port 15672) — used once, to create Profile's own user
 #   access-token-secret    Identity's ACCESS_TOKEN_SECRET, so its tokens verify here
-#   checkout               the path to a checkout of profile-service, relative to this file
+#   checkout               the path to a checkout of profile-service. Compose reads a relative path
+#                          against the project directory — the first compose file's, unless
+#                          --project-directory says otherwise — so an absolute path is the safe one
 x-profile:
   service-name: &service-name profile-service
   port: &port "3000"
