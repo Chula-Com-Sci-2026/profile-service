@@ -1,62 +1,58 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { setFieldVisibility } from '../../../src/application/set-field-visibility.ts'
 import { InvalidProfileFieldError, ProfileNotFoundError } from '../../../src/domain/errors.ts'
 import type { HiddenField } from '../../../src/domain/hidden-field.ts'
 import { InMemoryProfileRepository } from './in-memory-profile-repository.ts'
-import { RecordingProfileEvents, publishing } from './profile-events-double.ts'
+import { InMemoryUnitOfWork } from './in-memory-unit-of-work.ts'
 import { aProfile, RAY } from './profiles.ts'
+
+let repository: InMemoryProfileRepository
+let unitOfWork: InMemoryUnitOfWork
+
+beforeEach(() => {
+  repository = new InMemoryProfileRepository()
+  unitOfWork = new InMemoryUnitOfWork(repository)
+})
 
 describe('setFieldVisibility', () => {
   it('replaces the hidden set and stores it', async () => {
-    const repository = new InMemoryProfileRepository()
     repository.given(aProfile({ hiddenFields: ['bio'] }))
 
-    const changed = await setFieldVisibility(repository, publishing())(RAY, ['gear', 'pace'])
+    const changed = await setFieldVisibility(unitOfWork)(RAY, ['gear', 'pace'])
 
     expect(changed.hiddenFields).toEqual(['pace', 'gear'])
     expect((await repository.findById(RAY))?.hiddenFields).toEqual(['pace', 'gear'])
     expect(changed.bio).toBe('Evening runs, Lumphini.')
   })
 
-  it('raises the domain error when there is no profile, publishing nothing', async () => {
-    const events = new RecordingProfileEvents()
+  it('raises its revision, and publishes it in the same unit of work', async () => {
+    repository.given(aProfile({ revision: 3 }))
 
-    await expect(setFieldVisibility(new InMemoryProfileRepository(), publishing(events))(RAY, ['bio'])).rejects.toThrow(
-      ProfileNotFoundError,
-    )
-    expect(events.published).toEqual([])
+    const changed = await setFieldVisibility(unitOfWork)(RAY, ['bio'])
+
+    expect(changed.revision).toBe(4)
+    expect(unitOfWork.published).toEqual([changed])
+    expect(unitOfWork.runs).toBe(1)
+  })
+
+  it('raises the domain error when there is no profile, publishing nothing', async () => {
+    await expect(setFieldVisibility(unitOfWork)(RAY, ['bio'])).rejects.toThrow(ProfileNotFoundError)
+    expect(unitOfWork.published).toEqual([])
+  })
+
+  it('raises ProfileNotFoundError when the profile vanished between the read and the write', async () => {
+    repository.given(aProfile())
+    repository.interfere(() => repository.remove(RAY))
+
+    await expect(setFieldVisibility(unitOfWork)(RAY, ['bio'])).rejects.toThrow(ProfileNotFoundError)
+    expect([unitOfWork.runs, unitOfWork.published]).toEqual([2, []])
   })
 
   it('refuses a field that cannot be hidden, storing nothing', async () => {
-    const repository = new InMemoryProfileRepository()
     repository.given(aProfile())
 
-    await expect(setFieldVisibility(repository, publishing())(RAY, ['name' as HiddenField])).rejects.toThrow(
-      InvalidProfileFieldError,
-    )
+    await expect(setFieldVisibility(unitOfWork)(RAY, ['name' as HiddenField])).rejects.toThrow(InvalidProfileFieldError)
     expect((await repository.findById(RAY))?.hiddenFields).toEqual([])
-  })
-
-  it('publishes the changed profile, after the write', async () => {
-    const repository = new InMemoryProfileRepository()
-    repository.given(aProfile())
-    const events = new RecordingProfileEvents()
-
-    const changed = await setFieldVisibility(repository, publishing(events))(RAY, ['bio'])
-
-    expect(events.published).toEqual([{ type: 'updated', profile: changed }])
-  })
-
-  it('keeps the change when delivery fails, and reports it', async () => {
-    const repository = new InMemoryProfileRepository()
-    repository.given(aProfile())
-    const events = new RecordingProfileEvents()
-    events.failWith = new Error('Buddy Discovery is down')
-    const undelivered: string[] = []
-
-    await setFieldVisibility(repository, { events, onUndelivered: (id) => undelivered.push(id) })(RAY, ['bio'])
-
-    expect((await repository.findById(RAY))?.hiddenFields).toEqual(['bio'])
-    expect(undelivered).toEqual([RAY])
+    expect(unitOfWork.published).toEqual([])
   })
 })

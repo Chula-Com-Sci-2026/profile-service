@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { serve } from '@hono/node-server'
 import { pino } from 'pino'
@@ -5,17 +6,16 @@ import { attachPhoto } from './application/attach-photo.ts'
 import { createPhotoUpload } from './application/create-photo-upload.ts'
 import { getProfile } from './application/get-profile.ts'
 import { getPublicProfile } from './application/get-public-profile.ts'
-import type { Publishing } from './application/publishing.ts'
 import { removePhoto } from './application/remove-photo.ts'
 import { saveProfile } from './application/save-profile.ts'
 import { setFieldVisibility } from './application/set-field-visibility.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
+import { drizzleUnitOfWork } from './infrastructure/drizzle-unit-of-work.ts'
 import { logOrphan } from './infrastructure/log-orphan.ts'
 import { createPhotoStorage } from './infrastructure/minio-photo-storage.ts'
 import { photoUrlFor } from './infrastructure/photo-url.ts'
-import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
 import { createApp } from './interface/http/app.ts'
 import { currentCorrelationId } from './interface/http/request-context.ts'
 
@@ -50,21 +50,28 @@ const photoUrl = photoUrlFor(config.objectStorage)
 /** A replaced or removed photo storage would not delete — logged and tolerated, see logOrphan. */
 const onOrphan = logOrphan(logger, currentCorrelationId, 'a photo object was orphaned')
 
-/** Nothing sends profile events until the outbox relays them. */
-const publishing: Publishing = { events: silentProfileEvents, onUndelivered: () => {} }
+/**
+ * Each change, with its ProfileUpdated, in one transaction: the event goes to the outbox, never
+ * straight to the broker, so a save never waits on it. The event carries the request's
+ * correlation id; every write comes through a request, so the fallback is a formality.
+ */
+const unitOfWork = drizzleUnitOfWork(database.db, {
+  photoUrl,
+  correlationId: () => currentCorrelationId() ?? randomUUID(),
+})
 
 /** Flipped before anything stops accepting, so /ready answers 503 first. */
 let draining = false
 
 const app = createApp({
   useCases: {
-    saveProfile: saveProfile(repository, publishing),
+    saveProfile: saveProfile(unitOfWork),
     getProfile: getProfile(repository),
     getPublicProfile: getPublicProfile(repository),
-    setFieldVisibility: setFieldVisibility(repository, publishing),
+    setFieldVisibility: setFieldVisibility(unitOfWork),
     createPhotoUpload: createPhotoUpload(repository, photos),
-    attachPhoto: attachPhoto(repository, photos, onOrphan, publishing),
-    removePhoto: removePhoto(repository, photos, onOrphan, publishing),
+    attachPhoto: attachPhoto(repository, unitOfWork, photos, onOrphan),
+    removePhoto: removePhoto(unitOfWork, photos, onOrphan),
   },
   logger,
   authentication: config.accessToken,

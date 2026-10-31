@@ -3,13 +3,14 @@ import { attachPhoto } from '../../../src/application/attach-photo.ts'
 import { StorageUnavailableError } from '../../../src/application/errors.ts'
 import { InvalidProfileFieldError, ProfileNotFoundError } from '../../../src/domain/errors.ts'
 import { InMemoryProfileRepository } from './in-memory-profile-repository.ts'
+import { InMemoryUnitOfWork } from './in-memory-unit-of-work.ts'
 import { FakePhotoStorage, keyFor } from './photo-storage-double.ts'
-import { RecordingProfileEvents, publishing } from './profile-events-double.ts'
 import { aProfile, RAY } from './profiles.ts'
 
 const BEAM = '44444444-4444-4444-8444-444444444444'
 const NEW = keyFor(RAY, '9d3a7c5e-1b2f-4a6c-8e0d-3f5b7a9c1e2d')
 const OLD = keyFor(RAY, 'c6f4de83-2b48-4593-a003-42cc94afa15f')
+const OTHER = keyFor(RAY, '2e4a6c8e-0b1d-4f3a-9c5e-7d9b1f3a5c7e')
 
 function given(photoRef: string | null = null) {
   const repository = new InMemoryProfileRepository()
@@ -17,21 +18,49 @@ function given(photoRef: string | null = null) {
   const storage = new FakePhotoStorage()
   storage.objects.add(NEW)
   if (photoRef !== null) storage.objects.add(photoRef)
-  const events = new RecordingProfileEvents()
+  const unitOfWork = new InMemoryUnitOfWork(repository)
   const orphans: string[] = []
-  const attach = attachPhoto(repository, storage, (id) => orphans.push(id), publishing(events))
-  return { repository, storage, events, orphans, attach }
+  const attach = attachPhoto(repository, unitOfWork, storage, (id) => orphans.push(id))
+  return { repository, storage, unitOfWork, orphans, attach }
 }
 
 describe('attachPhoto', () => {
   it('puts an uploaded photo on the profile, stores it and publishes it', async () => {
-    const { repository, events, attach } = given()
+    const { repository, unitOfWork, attach } = given()
 
     const attached = await attach(RAY, NEW)
 
     expect(attached.photoRef).toBe(NEW)
     expect((await repository.findById(RAY))?.photoRef).toBe(NEW)
-    expect(events.published).toEqual([{ type: 'updated', profile: attached }])
+    expect(unitOfWork.published).toEqual([attached])
+  })
+
+  it('raises its revision, and publishes it in the same unit of work', async () => {
+    const { unitOfWork, attach } = given()
+    const attached = await attach(RAY, NEW)
+    expect(attached.revision).toBe(2)
+    expect([unitOfWork.published, unitOfWork.runs]).toEqual([[attached], 1])
+  })
+
+  it('removes the photo the change actually replaced when another change got in first', async () => {
+    const { repository, storage, attach } = given(OLD)
+    storage.objects.add(OTHER)
+    repository.interfere(() => repository.given(aProfile({ photoRef: OTHER, revision: 2 })))
+
+    const attached = await attach(RAY, NEW)
+
+    expect(attached).toMatchObject({ photoRef: NEW, revision: 3 })
+    expect(storage.removedKeys).toEqual([OTHER])
+  })
+
+  it('asks storage once, however many attempts the write takes', async () => {
+    const { repository, storage, unitOfWork, attach } = given()
+    repository.interfere(() => repository.given(aProfile({ revision: 2 })))
+
+    await attach(RAY, NEW)
+
+    expect(unitOfWork.runs).toBe(2)
+    expect(storage.asked).toEqual([NEW])
   })
 
   it('removes the photo it replaces, after the write', async () => {
@@ -53,14 +82,14 @@ describe('attachPhoto', () => {
 
   it('refuses another runner’s key even when it exists, and deletes nothing of theirs', async () => {
     // Review Focus 5: a runner must never adopt — and later have removed — another runner's photo.
-    const { repository, storage, events, attach } = given(OLD)
+    const { repository, storage, unitOfWork, attach } = given(OLD)
     const theirs = keyFor(BEAM)
     storage.objects.add(theirs)
 
     await expect(attach(RAY, theirs)).rejects.toThrow(InvalidProfileFieldError)
     expect(storage.removedKeys).toEqual([])
     expect(storage.objects.has(theirs)).toBe(true)
-    expect(events.published).toEqual([])
+    expect(unitOfWork.published).toEqual([])
     expect((await repository.findById(RAY))?.photoRef).toBe(OLD)
   })
 
@@ -87,7 +116,8 @@ describe('attachPhoto', () => {
   })
 
   it('raises the domain error when there is no profile', async () => {
-    const attach = attachPhoto(new InMemoryProfileRepository(), new FakePhotoStorage(), () => {}, publishing())
+    const repository = new InMemoryProfileRepository()
+    const attach = attachPhoto(repository, new InMemoryUnitOfWork(repository), new FakePhotoStorage(), () => {})
     await expect(attach(RAY, NEW)).rejects.toThrow(ProfileNotFoundError)
   })
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { sql } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
@@ -14,6 +15,8 @@ import { removePhoto } from '../../src/application/remove-photo.ts'
 import { saveProfile } from '../../src/application/save-profile.ts'
 import { setFieldVisibility } from '../../src/application/set-field-visibility.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
+import { drizzleUnitOfWork } from '../../src/infrastructure/drizzle-unit-of-work.ts'
+import type { ProfileUpdatedEvent } from '../../src/infrastructure/profile-published-language.ts'
 import { createApp, type UseCases } from '../../src/interface/http/app.ts'
 import type { Env } from '../../src/interface/http/context.ts'
 import { contractDocument } from '../../src/interface/http/docs.ts'
@@ -21,7 +24,7 @@ import { errorHandler } from '../../src/interface/http/error-handler.ts'
 import { currentCorrelationId } from '../../src/interface/http/request-context.ts'
 import { documentedResponses, exercised, expectContract, expectSchema } from './contract.ts'
 import { FakePhotoStorage, keyFor } from '../unit/application/photo-storage-double.ts'
-import { RecordingProfileEvents } from '../unit/application/profile-events-double.ts'
+import { expectProfileEvent } from '../unit/infrastructure/event-contract.ts'
 import { anIdentity, type Identity } from './identity.ts'
 
 const alwaysReady = { isDraining: () => false, canServe: () => Promise.resolve(true) }
@@ -40,10 +43,6 @@ let pool: pg.Pool
 let db: NodePgDatabase
 let app: Hono<Env>
 let identity: Identity
-/** What the app published during the current test; reset before each. */
-let events: RecordingProfileEvents
-const undelivered: string[] = []
-let correlationIdWhenPublished: string | undefined
 /** Object storage for the current test; reset before each. */
 let storage: FakePhotoStorage
 const orphaned: string[] = []
@@ -58,18 +57,16 @@ const onOrphan = (id: string): void => {
   orphaned.push(id)
 }
 
-/** Reads `events` at call time, so each test sees a fresh recorder. */
-const publishing = () => ({
-  events: {
-    updated: (profile: Parameters<RecordingProfileEvents['updated']>[0]) => {
-      correlationIdWhenPublished = currentCorrelationId()
-      return events.updated(profile)
-    },
-  },
-  onUndelivered: (id: string) => {
-    undelivered.push(id)
-  },
-})
+/** Every event the app has written to the outbox, oldest first. */
+async function outboxEvents(): Promise<ProfileUpdatedEvent[]> {
+  const result = await db.execute(sql`SELECT payload FROM outbox ORDER BY sequence`)
+  return result.rows.map((row) => row['payload'] as ProfileUpdatedEvent)
+}
+
+/** The event the app wrote last. */
+async function lastEvent(): Promise<ProfileUpdatedEvent | undefined> {
+  return (await outboxEvents()).at(-1)
+}
 
 /** Every use case answering the same way — for an app whose use cases a test does not care about. */
 function everyUseCase(answer: () => Promise<never>): UseCases {
@@ -100,17 +97,17 @@ beforeAll(async () => {
   db = drizzle(pool)
   identity = anIdentity()
   const repository = new DrizzleProfileRepository(db)
-  events = new RecordingProfileEvents()
+  const unitOfWork = drizzleUnitOfWork(db, { photoUrl, correlationId: () => currentCorrelationId() ?? randomUUID() })
 
   app = createApp({
     useCases: {
-      saveProfile: saveProfile(repository, publishing()),
+      saveProfile: saveProfile(unitOfWork),
       getProfile: getProfile(repository),
       getPublicProfile: getPublicProfile(repository),
-      setFieldVisibility: setFieldVisibility(repository, publishing()),
+      setFieldVisibility: setFieldVisibility(unitOfWork),
       createPhotoUpload: createPhotoUpload(repository, currentStorage),
-      attachPhoto: attachPhoto(repository, currentStorage, onOrphan, publishing()),
-      removePhoto: removePhoto(repository, currentStorage, onOrphan, publishing()),
+      attachPhoto: attachPhoto(repository, unitOfWork, currentStorage, onOrphan),
+      removePhoto: removePhoto(unitOfWork, currentStorage, onOrphan),
     },
     logger: pino({ level: 'silent' }),
     authentication: identity.settings,
@@ -134,10 +131,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await db.execute(sql`TRUNCATE profiles`)
-  events = new RecordingProfileEvents()
-  undelivered.length = 0
-  correlationIdWhenPublished = undefined
+  await db.execute(sql`TRUNCATE profiles, outbox`)
   storage = new FakePhotoStorage()
   orphaned.length = 0
 })
@@ -498,11 +492,10 @@ describe('PUT /api/v1/me/profile/visibility — setFieldVisibility', () => {
     await expectContract('setFieldVisibility', 401, response)
   })
 
-  it('publishes ProfileUpdated with the new set', async () => {
-    await givenAProfile()
-    events.published.length = 0
-    await hide(NOK, { hiddenFields: ['gear'] })
-    expect(events.published.at(-1)?.profile.hiddenFields).toEqual(['gear'])
+  it('publishes ProfileUpdated with the new set applied — a hidden field null in the event too', async () => {
+    await givenAProfile(NOK, { ...minimal, gear: ['Pegasus 41'] })
+    await hide(NOK, { hiddenFields: ['gear', 'pace'] })
+    expect((await lastEvent())?.payload).toMatchObject({ gear: null, paceMin: null, paceMax: null, revision: 2 })
   })
 })
 
@@ -639,9 +632,8 @@ describe('PUT /api/v1/me/profile/photo — attachPhoto', () => {
   it('publishes ProfileUpdated with the photo', async () => {
     await givenAProfile()
     storage.objects.add(uploaded)
-    events.published.length = 0
     await attach(NOK, { photoRef: uploaded })
-    expect(events.published.at(-1)?.profile.photoRef).toBe(uploaded)
+    expect((await lastEvent())?.payload).toMatchObject({ photoUrl: photoUrl(uploaded), revision: 2 })
   })
 })
 
@@ -693,9 +685,8 @@ describe('DELETE /api/v1/me/profile/photo — removePhoto', () => {
 
   it('publishes ProfileUpdated without the photo', async () => {
     await givenAPhoto()
-    events.published.length = 0
     await remove(NOK)
-    expect(events.published.at(-1)?.profile.photoRef).toBeNull()
+    expect((await lastEvent())?.payload).toMatchObject({ photoUrl: null })
   })
 })
 
@@ -754,14 +745,14 @@ describe('GET /up', () => {
 describe('the correlation id — X-Correlation-Id', () => {
   const given = 'abcdef01-2345-4678-89ab-cdef01234567'
 
-  it('is current while the request is served, so the event publisher can pass it on (NFR-7.4)', async () => {
+  it('is the correlationId of the event the request wrote (NFR-7.4)', async () => {
     const response = await as(NOK, ME, {
       method: 'PUT',
       body: JSON.stringify(minimal),
       headers: { 'x-correlation-id': given.toUpperCase() },
     })
     expect(response.status).toBe(200)
-    expect(correlationIdWhenPublished).toBe(given)
+    expect((await lastEvent())?.correlationId).toBe(given)
   })
 
   it('is gone once the request is over', () => {
@@ -987,23 +978,30 @@ describe('the documentation', () => {
   })
 })
 
-describe('profile events — the use cases tell subscribers', () => {
-  it('a save publishes ProfileUpdated with the saved profile', async () => {
+describe('profile events — each change writes ProfileUpdated to the outbox', () => {
+  it('a save writes one ProfileUpdated, revision 1, obeying the event contract', async () => {
     await expectContract('saveProfile', 200, await save(NOK, { ...minimal, bio: 'Hi' }))
-    expect(events.published.map((event) => event.type)).toEqual(['updated'])
-    expect(events.published.at(-1)?.profile.bio).toBe('Hi')
+    const events = await outboxEvents()
+    expect(events.map((event) => [event.eventType, event.payload.id, event.payload.revision])).toEqual([['ProfileUpdated', NOK, 1]])
+    expect(events[0]?.payload['bio']).toBe('Hi')
+    expectProfileEvent(events[0])
   })
 
-  it('a refused save publishes nothing', async () => {
+  it('a refused save writes nothing', async () => {
     await expectContract('saveProfile', 422, await save(NOK, { ...minimal, paceMin: 0 }))
-    expect(events.published).toEqual([])
+    expect(await outboxEvents()).toEqual([])
   })
 
-  it('still answers 200 when Buddy Discovery is down (ADR-0019), and reports it', async () => {
-    events.failWith = new Error('Buddy Discovery is down')
+  it('a save never waits on the broker: 200 with nothing sending, and its event waits unsent', async () => {
     await expectContract('saveProfile', 200, await save(NOK, minimal))
-    await expectContract('saveProfile', 200, await save(NOK, minimal))
-    expect(undelivered).toEqual([NOK, NOK])
+    const result = await db.execute(sql`SELECT published_at FROM outbox`)
+    expect(result.rows).toEqual([{ published_at: null }])
+  })
+
+  it('revision is never on HTTP — not in the owner’s view, not on the card', async () => {
+    const saved = await bodyOf(await save(NOK, minimal))
+    const card = await bodyOf(await as(BEAM, runner(NOK)))
+    expect(['revision' in saved, 'revision' in card]).toEqual([false, false])
   })
 })
 

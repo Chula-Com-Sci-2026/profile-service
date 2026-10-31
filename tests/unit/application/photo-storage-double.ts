@@ -12,6 +12,8 @@ export class FakePhotoStorage implements PhotoStorage {
   /** The keys storage holds: an upload a client finished. */
   readonly objects = new Set<string>()
   readonly removedKeys: string[] = []
+  /** Every key `holds` was asked about — whether storage was asked at all, and how often. */
+  readonly asked: string[] = []
   /** Every runner an upload link was signed for. */
   readonly created: string[] = []
   /** Storage does not answer: every call rejects, as a dead MinIO's would. */
@@ -31,6 +33,7 @@ export class FakePhotoStorage implements PhotoStorage {
 
   async holds(id: string, photoRef: string): Promise<boolean> {
     if (!isPhotoKeyOf(id, photoRef)) return false
+    this.asked.push(photoRef)
     if (this.unreachable) throw new Error('storage is unreachable')
     return this.objects.has(photoRef)
   }

@@ -50,6 +50,13 @@
       "when": 1793473783642,
       "tag": "0006_profile_revision",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793474179796,
+      "tag": "0007_create_outbox",
+      "breakpoints": true
     }
   ]
 }
