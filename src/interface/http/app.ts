@@ -59,8 +59,8 @@ async function jsonBody(c: Context<Env>): Promise<unknown> {
  *
  * Order is error handler outermost, then request context, then auth, then routes — the only
  * arrangement in which the error handler can catch what the others throw. Auth is mounted on
- * `/v1/*`, not globally, so `/health` never reaches it: that mirrors the contract, where
- * `/health` is the one operation carrying `security: []`.
+ * `/v1/*`, not globally, so `/up` never reaches it: that mirrors the contract, where
+ * `/up` carries `security: []`.
  */
 export function createApp({ useCases, logger, authentication: auth, readiness }: AppOptions): Hono<Env> {
   const app = new Hono<Env>()
@@ -73,9 +73,9 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
   // Liveness: is the process wedged? It must keep answering 200 while draining, because the
   // orchestrator's answer to a failing liveness probe is to restart — the wrong response to a
   // deliberate shutdown.
-  app.get('/health', (c) => c.json({ status: 'ok' }))
+  app.get('/up', (c) => c.json({ status: 'ok' }))
 
-  // Readiness: should traffic come here? Unlike /health this does check the database, because
+  // Readiness: should traffic come here? Unlike /up this does check the database, because
   // the answer to "not right now" is to route elsewhere, not to restart.
   app.get('/ready', async (c) => {
     if (readiness.isDraining()) return c.json({ status: 'draining' }, 503)

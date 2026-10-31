@@ -144,9 +144,9 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }   # no profile for that userId
         default: { $ref: '#/components/responses/Problem' }
 
-  /health:
+  /up:
     get:
-      operationId: health
+      operationId: liveness
       summary: Liveness probe
       security: []   # open: an orchestrator has no token
       description: >-
@@ -172,7 +172,7 @@ paths:
       summary: Readiness probe
       security: []   # open: a load balancer has no token
       description: >-
-        Whether this instance can serve right now. Unlike /health it does check the database,
+        Whether this instance can serve right now. Unlike /up it does check the database,
         because the answer to "do not send me traffic" is to route elsewhere, not to restart.
         It answers 503 while shutting down and while the database is unreachable. A failing
         readiness probe should remove the instance from rotation and nothing more.

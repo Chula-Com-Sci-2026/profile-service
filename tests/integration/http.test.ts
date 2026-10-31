@@ -439,9 +439,11 @@ describe('DELETE /v1/profiles/{userId} — deleteProfile', () => {
   })
 })
 
-describe('GET /health', () => {
+describe('GET /up', () => {
   it('200 without a token — it is the one public endpoint', async () => {
-    await expectContract('health', 200, await app.request('/health'))
+    const response = await app.request('/up')
+    await expectContract('liveness', 200, response.clone())
+    expect(await response.json()).toEqual({ status: 'ok' })
   })
 
   it('answers while the database is unreachable, because it never asks', async () => {
@@ -457,7 +459,7 @@ describe('GET /health', () => {
       authentication: identity.settings,
       readiness: alwaysReady,
     })
-    await expectContract('health', 200, await isolated.request('/health'))
+    await expectContract('liveness', 200, await isolated.request('/up'))
   })
 })
 
@@ -478,23 +480,23 @@ describe('the request context', () => {
   })
 
   it('echoes a correlation id back', async () => {
-    const response = await app.request('/health')
+    const response = await app.request('/up')
     expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it('mints one when the X-Request-Id it is given is empty — an empty id joins nothing', async () => {
-    const response = await app.request('/health', { headers: { 'x-request-id': '' } })
+    const response = await app.request('/up', { headers: { 'x-request-id': '' } })
     expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it('carries a given X-Request-Id through', async () => {
-    const response = await app.request('/health', { headers: { 'x-request-id': 'abc123' } })
+    const response = await app.request('/up', { headers: { 'x-request-id': 'abc123' } })
     expect(response.headers.get('x-request-id')).toBe('abc123')
   })
 
   it('prefers the trace id from traceparent', async () => {
     const traceId = '4bf92f3577b34da6a3ce929d0e0e4736'
-    const response = await app.request('/health', {
+    const response = await app.request('/up', {
       headers: { traceparent: `00-${traceId}-00f067aa0ba902b7-01` },
     })
     expect(response.headers.get('x-request-id')).toBe(traceId)
@@ -754,7 +756,7 @@ describe('GET /ready', () => {
       readiness,
     })
 
-  it('200 when serving — and no token needed, like /health', async () => {
+  it('200 when serving — and no token needed, like /up', async () => {
     await expectContract('readiness', 200, await app.request('/ready'))
   })
 
@@ -778,7 +780,7 @@ describe('GET /ready', () => {
     expect(body).toEqual({ status: 'unavailable' })
   })
 
-  it('503 when the database is out of reach — unlike /health, which does not ask', async () => {
+  it('503 when the database is out of reach — unlike /up, which does not ask', async () => {
     const unreachable = { isDraining: () => false, canServe: () => Promise.resolve(false) }
     const response = await withReadiness(unreachable).request('/ready')
     const body = await response.clone().json()
@@ -787,7 +789,7 @@ describe('GET /ready', () => {
 
     // The same instance still reports itself alive: a drained or database-less process is not
     // a wedged one, and restarting it would fix nothing.
-    await expectContract('health', 200, await withReadiness(unreachable).request('/health'))
+    await expectContract('liveness', 200, await withReadiness(unreachable).request('/up'))
   })
 })
 

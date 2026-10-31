@@ -22,7 +22,7 @@ The service listens on **http://localhost:3000**.
 itself, so it always matches the version running.
 
 ```bash
-curl localhost:3000/health   # {"status":"ok"}
+curl localhost:3000/up       # {"status":"ok"}
 curl localhost:3000/ready    # {"status":"ready"}
 ```
 
@@ -53,7 +53,7 @@ Ray's profile is there once `npm run db:seed` has run (see Local development).
 | `PATCH` | `/v1/profiles/{userId}` | change one — `null` clears a field |
 | `DELETE` | `/v1/profiles/{userId}` | delete one, permanently |
 | `POST` | `/v1/profiles/{userId}/avatar-uploads` | create an upload — a URL to PUT the avatar to |
-| `GET` | `/health` | is the process alive? |
+| `GET` | `/up` | is the process alive? |
 | `GET` | `/ready` | should traffic come here? |
 | `GET` | `/docs` | this API, rendered |
 | `GET` | `/openapi.yaml` | the contract, as a file |

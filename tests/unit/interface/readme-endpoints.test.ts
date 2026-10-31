@@ -22,7 +22,7 @@ const declared = Object.entries(contract['paths'] as Node).flatMap(([path, item]
     .map(([method]) => `${method.toUpperCase()} ${path}`),
 )
 
-/** Rows shaped `| GET | /health | … |`, with {userId} written the way the contract writes it. */
+/** Rows shaped `| GET | /up | … |`, with {userId} written the way the contract writes it. */
 const listed = [...readme.matchAll(/^\|\s*`([A-Z]+)`\s*\|\s*`([^`]+)`\s*\|/gm)].map(
   ([, method, path]) => `${method as string} ${path as string}`,
 )

@@ -29,7 +29,7 @@ const ASSETS = new Map<string, { module: string; type: string }>([
  * Resolved per request, not at import. `app.ts` imports this module statically, so resolving at
  * module scope makes an unresolvable `swagger-ui-dist` a boot failure of the whole service —
  * move it to devDependencies and `npm ci --omit=dev` produces a container that never answers
- * /health, while every test still passes because tests install dev dependencies. Lazily, the
+ * /up, while every test still passes because tests install dev dependencies. Lazily, the
  * blast radius is /docs.
  */
 const require = createRequire(import.meta.url)
