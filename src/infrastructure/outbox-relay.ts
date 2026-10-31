@@ -31,9 +31,25 @@ export type OutboxRelay = {
 /**
  * What a delivery log line names: the event, its runner and the request behind it — never the
  * payload, so no log line can carry a card.
+ *
+ * A row's envelope is read back from a `jsonb` column, so it is checked here rather than trusted:
+ * one that lacks a name it should carry is refused before it is sent, and the refusal is an outage
+ * like any other — logged once, holding back the rows behind it, never thrown out of a tick.
  */
-function names(event: ProfileUpdatedEvent): Record<string, string> {
-  return { eventId: event.eventId, eventType: event.eventType, id: event.payload.id, correlationId: event.correlationId }
+function names({ sequence, event }: OutboxMessage): Record<string, string> {
+  const envelope = event as Partial<Record<keyof ProfileUpdatedEvent, unknown>> | null
+  const payload = envelope?.payload as { id?: unknown } | null | undefined
+  const found = {
+    eventId: envelope?.eventId,
+    eventType: envelope?.eventType,
+    id: payload?.id,
+    correlationId: envelope?.correlationId,
+  }
+  const missing = Object.entries(found).filter(([, value]) => typeof value !== 'string').map(([name]) => name)
+  if (missing.length > 0) {
+    throw new Error(`outbox row ${sequence} is not a ProfileUpdated envelope: it has no ${missing.join(', ')}`)
+  }
+  return found as Record<string, string>
 }
 
 /**
@@ -52,22 +68,23 @@ export function outboxRelay({ outbox, sender, log, intervalMs = RELAY_INTERVAL_M
 
   async function drain(): Promise<void> {
     while (!stopping) {
-      let message: OutboxMessage | null = null
+      // Built inside the try, so neither line below can throw: the row's place until its names are known.
+      let fields: Record<string, unknown> = {}
       try {
-        message = await outbox.oldestUnsent()
+        const message = await outbox.oldestUnsent()
         if (message === null) return
+        fields = { sequence: message.sequence }
+        fields = names(message)
         await sender.send(message.event)
         await outbox.markSent(message.sequence)
       } catch (error) {
-        if (!failing) {
-          log.warn({ err: error, ...(message !== null && names(message.event)) }, 'profile events cannot be delivered; they wait in the outbox')
-        }
+        if (!failing) log.warn({ err: error, ...fields }, 'profile events cannot be delivered; they wait in the outbox')
         failing = true
         return
       }
-      if (failing) log.info(names(message.event), 'profile events are being delivered again')
+      if (failing) log.info(fields, 'profile events are being delivered again')
       failing = false
-      log.info(names(message.event), 'profile event sent')
+      log.info(fields, 'profile event sent')
     }
   }
 
@@ -79,19 +96,26 @@ export function outboxRelay({ outbox, sender, log, intervalMs = RELAY_INTERVAL_M
     return inFlight
   }
 
+  /**
+   * One tick, then the next. Whatever a tick throws is logged and the ticks go on: a rejection
+   * here would go unhandled — and Node exits on that, taking the HTTP server with it — and the
+   * next tick would never be scheduled.
+   */
+  function tick(): void {
+    void runOnce()
+      .catch((error: unknown) => log.warn({ err: error }, 'a relay tick failed; the next one runs as usual'))
+      .finally(schedule)
+  }
+
   function schedule(): void {
     if (stopping) return
-    timer = setTimeout(() => {
-      void runOnce().then(schedule)
-    }, intervalMs)
+    timer = setTimeout(tick, intervalMs)
     // The relay never keeps the process alive on its own; the server does.
     timer.unref()
   }
 
   return {
-    start: () => {
-      void runOnce().then(schedule)
-    },
+    start: tick,
     runOnce,
     stop: async () => {
       stopping = true

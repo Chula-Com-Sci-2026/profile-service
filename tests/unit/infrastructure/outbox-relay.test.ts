@@ -206,6 +206,43 @@ describe('the outbox relay', () => {
     expect(sender.attempted).toHaveLength(1)
   })
 
+  it('treats a malformed row as an outage: logged once, holding the rows behind it, never crashing the ticks', async () => {
+    // A row whose envelope has no payload. Building its log line once threw outside the tick's
+    // own catch, so the tick rejected unhandled — Node exits on that — and no tick came after it.
+    const outbox = new MemoryOutbox(1)
+    const malformed = { eventId: 'not-an-envelope', eventType: 'ProfileUpdated' } as unknown as ProfileUpdatedEvent
+    outbox.messages.unshift({ sequence: 0, event: malformed })
+    let reads = 0
+    const read = outbox.oldestUnsent
+    outbox.oldestUnsent = () => {
+      reads += 1
+      return read()
+    }
+    const sender = new ScriptedSender(outbox)
+    const log = recordingLog()
+    const relay = outboxRelay({ outbox, sender, log, intervalMs: 10 })
+    const unhandled: unknown[] = []
+    const record = (reason: unknown): void => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', record)
+
+    try {
+      relay.start()
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      await relay.stop()
+    } finally {
+      process.off('unhandledRejection', record)
+    }
+
+    expect(unhandled).toEqual([])
+    expect(reads).toBeGreaterThan(2)
+    expect(warnings(log)).toHaveLength(1)
+    expect(warnings(log)[0]?.fields).toMatchObject({ sequence: 0 })
+    expect(sender.attempted).toEqual([])
+    expect(outbox.unsent).toEqual([0, 1])
+  })
+
   it('start() ticks every interval until stopped', async () => {
     const outbox = new MemoryOutbox(0)
     const sender = new ScriptedSender(outbox)
