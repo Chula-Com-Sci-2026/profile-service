@@ -51,6 +51,9 @@ Ray's profile is there once `npm run db:seed` has run (see Local development).
 | `GET` | `/api/v1/me/profile` | your whole profile — 404 until you save one |
 | `PUT` | `/api/v1/me/profile` | save it — creates or replaces, 200 every time |
 | `PUT` | `/api/v1/me/profile/visibility` | choose which fields other runners see |
+| `POST` | `/api/v1/me/profile/photo-uploads` | a link to upload a photo to |
+| `PUT` | `/api/v1/me/profile/photo` | attach the uploaded photo |
+| `DELETE` | `/api/v1/me/profile/photo` | remove the photo |
 | `GET` | `/api/v1/runners/{id}` | a runner's public card, yours included |
 | `GET` | `/up` | is the process alive? |
 | `GET` | `/ready` | should traffic come here? |
@@ -64,8 +67,20 @@ runner changes only their own profile; anyone's public card can be read. Nothing
 Profiles cannot be listed or searched — deliberately: Buddy Discovery keeps its own copy of what
 this service publishes, as [docs/domain.md](docs/domain.md) §1 explains.
 
-Statuses, request and response shapes, and the avatar handshake are in the contract: open
-`/docs`, or read [docs/openapi.yaml](docs/openapi.yaml).
+Statuses and request and response shapes are in the contract: open `/docs`, or read
+[docs/openapi.yaml](docs/openapi.yaml).
+
+### A photo, in three steps
+
+The image goes straight to object storage; this service hands out the link and records the key.
+
+1. `POST /api/v1/me/profile/photo-uploads` answers `{uploadUrl, photoRef, expiresInSeconds}`.
+2. `PUT` the image bytes to `uploadUrl` — no token, it is already signed — before it expires.
+3. `PUT /api/v1/me/profile/photo` with `{"photoRef": "…"}` attaches it. The profile's `photoUrl`
+   then loads in an `<img>`, with no token.
+
+If object storage is down, steps 1 and 3 answer **503** `storage_unavailable`. Nothing else asks
+storage, so saving and reading profiles carry on.
 
 ## Local development
 
@@ -77,7 +92,7 @@ cp .env.example .env                              # the defaults match docker co
 npm ci
 docker compose up -d postgres minio create-bucket
 npm run db:migrate
-npm run db:seed                                   # seven runners, four with avatars
+npm run db:seed                                   # seven runners, four with photos
 npm run dev                                       # restarts on save, readable logs
 ```
 

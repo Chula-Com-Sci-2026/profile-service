@@ -16,12 +16,12 @@ describe('logOrphan', () => {
     const log = recordingLog()
     const failure = new Error('object storage is down')
 
-    logOrphan(log, () => 'req-1', 'an avatar object was orphaned by a profile change')('7f3a9c2e15', failure)
+    logOrphan(log, () => 'req-1', 'a photo object was orphaned')('11111111-1111-4111-8111-111111111111', failure)
 
     expect(log.lines).toEqual([
       {
-        fields: { err: failure, userId: '7f3a9c2e15', correlationId: 'req-1' },
-        message: 'an avatar object was orphaned by a profile change',
+        fields: { err: failure, id: '11111111-1111-4111-8111-111111111111', correlationId: 'req-1' },
+        message: 'a photo object was orphaned',
       },
     ])
   })
@@ -29,9 +29,9 @@ describe('logOrphan', () => {
   it('logs without a correlation id outside a request, rather than inventing one', () => {
     const log = recordingLog()
 
-    logOrphan(log, () => undefined, 'avatar objects orphaned after deleting a profile')('7f3a9c2e15', new Error('x'))
+    logOrphan(log, () => undefined, 'a photo object was orphaned')('11111111-1111-4111-8111-111111111111', new Error('x'))
 
-    expect(log.lines[0]?.fields['userId']).toBe('7f3a9c2e15')
+    expect(log.lines[0]?.fields['id']).toBe('11111111-1111-4111-8111-111111111111')
     expect(log.lines[0]?.fields['correlationId']).toBeUndefined()
   })
 })

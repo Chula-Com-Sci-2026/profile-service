@@ -89,6 +89,90 @@ paths:
         '422': { $ref: '#/components/responses/ValidationFailed' }   # an unknown name, a repeat, or no hiddenFields
         default: { $ref: '#/components/responses/InternalError' }
 
+  /api/v1/me/profile/photo-uploads:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+
+    post:
+      operationId: createPhotoUpload
+      summary: Create an upload for a new photo
+      description: >-
+        The first step of the photo handshake. Creates an upload: a short-lived URL the client
+        PUTs the image to directly, and the key that upload will occupy. The resource is the
+        *permission*, not the photo — which is why the path is `photo-uploads` and why nothing
+        here accepts image bytes. The service never handles them; it is an API, not a file
+        server.
+
+        It checks that object storage answers before signing, so a storage outage is a 503 here
+        rather than a network error in the browser's upload later. It does not change the
+        profile: once the upload succeeds, attach the key with `PUT /api/v1/me/profile/photo`.
+        Until then the profile is untouched, so a failed upload leaves nothing pointing at an
+        object that does not exist.
+      responses:
+        '201':
+          description: An upload is authorised
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [uploadUrl, photoRef, expiresInSeconds]
+                properties:
+                  uploadUrl:
+                    type: string
+                    description: PUT the image here, with no token — it is already signed. Expires; ask again rather than storing it.
+                  photoRef: { $ref: '#/components/schemas/PhotoRef' }
+                  expiresInSeconds: { type: integer, minimum: 1 }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # you have not saved one yet
+        '503': { $ref: '#/components/responses/StorageUnavailable' }   # object storage did not answer
+        default: { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/me/profile/photo:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+
+    put:
+      operationId: attachPhoto
+      summary: Attach an uploaded photo
+      description: >-
+        The last step of the photo handshake: puts the uploaded photo on the profile. The key
+        must be one this runner was given (`photos/{id}/…`) and the object must have been
+        uploaded; otherwise 422 on `photoRef`. A photo it replaces is deleted from storage after
+        the change, best effort. `photoUrl` then loads in an `<img>`, with no token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Unknown fields are ignored.
+              required: [photoRef]
+              properties:
+                photoRef: { $ref: '#/components/schemas/PhotoRef' }
+      responses:
+        '200': { $ref: '#/components/responses/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # you have not saved one yet
+        '422': { $ref: '#/components/responses/ValidationFailed' }   # not this runner's key, never uploaded, or no photoRef
+        '503': { $ref: '#/components/responses/StorageUnavailable' }   # object storage could not be asked
+        default: { $ref: '#/components/responses/InternalError' }
+
+    delete:
+      operationId: removePhoto
+      summary: Remove the photo
+      description: >-
+        Takes the photo off the profile, and deletes it from storage after the change, best
+        effort — so it never answers 503: with storage down the photo is still removed from the
+        profile, and the object is logged as an orphan. With no photo it answers 200 and changes
+        nothing.
+      responses:
+        '200': { $ref: '#/components/responses/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # you have not saved one yet
+        default: { $ref: '#/components/responses/InternalError' }
+
   /api/v1/runners/{id}:
     parameters:
       - name: id
@@ -302,6 +386,17 @@ components:
             allOf: [{ $ref: '#/components/schemas/ApiError' }]
             properties: { code: { const: validation_failed } }
 
+    StorageUnavailable:
+      description: >-
+        Object storage did not answer. Only a photo route ever says this; nothing else asks
+        storage, so everything else carries on.
+      headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
+      content:
+        application/json:
+          schema:
+            allOf: [{ $ref: '#/components/schemas/ApiError' }]
+            properties: { code: { const: storage_unavailable }, fieldErrors: false }
+
     InternalError:
       description: Anything else. Logged here; says nothing useful there
       headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
@@ -404,14 +499,17 @@ components:
     PhotoRef:
       type: string
       maxLength: 128
-      description: The photo's key in this service's object storage, `photos/{id}/{uuid}`.
+      description: >-
+        The photo's key in this service's object storage, `photos/{id}/{uuid}` — a fresh uuid per
+        upload. `createPhotoUpload` hands it out; only `attachPhoto` puts it on a profile.
 
     PhotoUrl:
       type: string
       pattern: '^https?://'
       description: >-
-        The photo's public address: the storage endpoint browsers use, the bucket, then the key.
-        Load it in an `<img>`; it needs no token.
+        The photo's public address, `{OBJECT_STORAGE_PUBLIC_ENDPOINT}/{OBJECT_STORAGE_BUCKET}/{photoRef}`:
+        path style, the storage endpoint browsers use. Load it in an `<img>`; it needs no token.
+        Worked out from `photoRef`, never stored.
 
     HideableField:
       type: string
@@ -526,7 +624,8 @@ components:
           type: string
           description: >-
             Stable, lowercase snake_case: unauthorized (401), profile_not_found (404), not_found
-            (404, no such route), validation_failed (422), internal_error (500).
+            (404, no such route), validation_failed (422), internal_error (500),
+            storage_unavailable (503, a photo route that cannot reach object storage).
         message: { type: string, description: 'Human prose, for people. Do not parse.' }
         correlationId: { $ref: '#/components/schemas/CorrelationId' }
         fieldErrors:

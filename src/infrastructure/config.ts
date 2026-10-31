@@ -177,7 +177,7 @@ function objectStorageFrom(env: Environment, problems: string[]): ObjectStorageC
   }
 }
 
-/** Storage alone, for the seed — it uploads avatars but has no use for a token setting. */
+/** Storage alone, for the seed — it uploads photos but has no use for a token setting. */
 export function loadObjectStorage(env: Environment = process.env): ObjectStorageConfig {
   const problems = STORAGE_REQUIRED.filter((name) => read(env, name).length === 0).map(
     (name) => `${name} is required`,

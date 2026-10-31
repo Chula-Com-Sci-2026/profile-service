@@ -30,7 +30,7 @@ describe('the seed runners', () => {
 
   it('name every photo file for a runner who exists, so a missed rename cannot drop a photo silently', () => {
     const ids = new Set(seed.map((entry) => entry.id))
-    const files = readdirSync('scripts/avatars')
+    const files = readdirSync('scripts/photos')
     expect(files.filter((file) => !ids.has(file.replace(/\.png$/, '')))).toEqual([])
     expect(files).toHaveLength(4)
   })

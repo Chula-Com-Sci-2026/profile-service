@@ -33,14 +33,14 @@ services:
       retries: 20
 
   # Provisioning, not application logic: the bucket exists before the service needs it, and it
-  # is readable anonymously because an avatar is a picture a runner chose to show other runners.
+  # is readable anonymously because a photo is a picture a runner chose to show other runners.
   # Keys carry a uuid, so the URL is unguessable even though the bucket is open — which only
   # holds if the keys cannot be listed. `mc anonymous set download` grants s3:ListBucket as well
   # as s3:GetObject, so an anonymous request could enumerate every key and with it every runner
-  # who has an avatar. The policy below grants s3:GetObject and nothing else.
+  # who has a photo. The policy below grants s3:GetObject and nothing else.
   #
-  # Named for the service, not for what is in it. Keys are `avatars/{userId}/{uuid}`, and a
-  # bucket also called `avatars` makes every path-style URL read /avatars/avatars/… — and
+  # Named for the service, not for what is in it. Keys are `photos/{id}/{uuid}`, and a
+  # bucket also called `photos` makes every path-style URL read /photos/photos/… — and
   # leaves nowhere to put anything this service might store later.
   create-bucket:
     image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z

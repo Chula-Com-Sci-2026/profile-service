@@ -5,8 +5,12 @@ import { Hono } from 'hono'
 import pg from 'pg'
 import { type Logger, pino } from 'pino'
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest'
+import { attachPhoto } from '../../src/application/attach-photo.ts'
+import { createPhotoUpload } from '../../src/application/create-photo-upload.ts'
 import { getProfile } from '../../src/application/get-profile.ts'
 import { getPublicProfile } from '../../src/application/get-public-profile.ts'
+import type { PhotoStorage } from '../../src/application/ports/photo-storage.ts'
+import { removePhoto } from '../../src/application/remove-photo.ts'
 import { saveProfile } from '../../src/application/save-profile.ts'
 import { setFieldVisibility } from '../../src/application/set-field-visibility.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
@@ -16,6 +20,7 @@ import { contractDocument } from '../../src/interface/http/docs.ts'
 import { errorHandler } from '../../src/interface/http/error-handler.ts'
 import { currentCorrelationId } from '../../src/interface/http/request-context.ts'
 import { documentedResponses, exercised, expectContract, expectSchema } from './contract.ts'
+import { FakePhotoStorage } from '../unit/application/photo-storage-double.ts'
 import { RecordingProfileEvents } from '../unit/application/profile-events-double.ts'
 import { anIdentity, type Identity } from './identity.ts'
 
@@ -39,6 +44,19 @@ let identity: Identity
 let events: RecordingProfileEvents
 const undelivered: string[] = []
 let correlationIdWhenPublished: string | undefined
+/** Object storage for the current test; reset before each. */
+let storage: FakePhotoStorage
+const orphaned: string[] = []
+
+/** Reads `storage` at call time, so each test sees a fresh one. */
+const currentStorage: PhotoStorage = {
+  createUpload: (id) => storage.createUpload(id),
+  holds: (id, photoRef) => storage.holds(id, photoRef),
+  remove: (id, photoRef) => storage.remove(id, photoRef),
+}
+const onOrphan = (id: string): void => {
+  orphaned.push(id)
+}
 
 /** Reads `events` at call time, so each test sees a fresh recorder. */
 const publishing = () => ({
@@ -55,7 +73,15 @@ const publishing = () => ({
 
 /** Every use case answering the same way — for an app whose use cases a test does not care about. */
 function everyUseCase(answer: () => Promise<never>): UseCases {
-  return { saveProfile: answer, getProfile: answer, getPublicProfile: answer, setFieldVisibility: answer }
+  return {
+    saveProfile: answer,
+    getProfile: answer,
+    getPublicProfile: answer,
+    setFieldVisibility: answer,
+    createPhotoUpload: answer,
+    attachPhoto: answer,
+    removePhoto: answer,
+  }
 }
 
 type AppExtras = { logger?: Logger; readiness?: typeof alwaysReady }
@@ -82,6 +108,9 @@ beforeAll(async () => {
       getProfile: getProfile(repository),
       getPublicProfile: getPublicProfile(repository),
       setFieldVisibility: setFieldVisibility(repository, publishing()),
+      createPhotoUpload: createPhotoUpload(repository, currentStorage),
+      attachPhoto: attachPhoto(repository, currentStorage, onOrphan, publishing()),
+      removePhoto: removePhoto(repository, currentStorage, onOrphan, publishing()),
     },
     logger: pino({ level: 'silent' }),
     authentication: identity.settings,
@@ -109,6 +138,8 @@ beforeEach(async () => {
   events = new RecordingProfileEvents()
   undelivered.length = 0
   correlationIdWhenPublished = undefined
+  storage = new FakePhotoStorage()
+  orphaned.length = 0
 })
 
 /** His contract's required fields, and nothing else. */
@@ -475,6 +506,215 @@ describe('PUT /api/v1/me/profile/visibility — setFieldVisibility', () => {
   })
 })
 
+describe('POST /api/v1/me/profile/photo-uploads — createPhotoUpload', () => {
+  const ask = (id: string): Promise<Response> => as(id, `${ME}/photo-uploads`, { method: 'POST' })
+
+  it('201 hands back somewhere to upload and the key it will occupy', async () => {
+    await givenAProfile()
+    const response = await ask(NOK)
+    const body = await bodyOf(response)
+    await expectContract('createPhotoUpload', 201, response)
+
+    expect(body).toMatchObject({ photoRef: `photos/${NOK}/abc`, expiresInSeconds: 300 })
+    expect(String(body['uploadUrl'])).toContain('X-Amz-Signature')
+  })
+
+  it('201 and the profile is untouched — attaching is attachPhoto’s job', async () => {
+    await givenAProfile()
+    await ask(NOK)
+    expect((await bodyOf(await as(NOK, ME)))['photoRef']).toBeNull()
+  })
+
+  it('503 storage_unavailable when object storage does not answer', async () => {
+    await givenAProfile()
+    storage.unreachable = true
+    const response = await ask(NOK)
+    const body = await bodyOf(response)
+    await expectContract('createPhotoUpload', 503, response)
+    expect(body['code']).toBe('storage_unavailable')
+  })
+
+  it('404 before the first save', async () => {
+    await expectContract('createPhotoUpload', 404, await ask(NOK))
+  })
+
+  it('401 without a token', async () => {
+    await expectContract('createPhotoUpload', 401, await app.request(`${ME}/photo-uploads`, { method: 'POST' }))
+  })
+})
+
+describe('PUT /api/v1/me/profile/photo — attachPhoto', () => {
+  const attach = (id: string, body: unknown): Promise<Response> =>
+    as(id, `${ME}/photo`, { method: 'PUT', body: JSON.stringify(body) })
+  const uploaded = `photos/${NOK}/abc`
+
+  it('200 puts the uploaded photo on the profile, with its public address', async () => {
+    await givenAProfile()
+    storage.objects.add(uploaded)
+    const response = await attach(NOK, { photoRef: uploaded })
+    const body = await bodyOf(response)
+    await expectContract('attachPhoto', 200, response)
+
+    expectSchema('Profile', body)
+    expect(body).toMatchObject({ photoRef: uploaded, photoUrl: `http://localhost:9000/profile-service/${uploaded}` })
+  })
+
+  it('shows the photo on the card as its public address, to everyone', async () => {
+    await givenAProfile()
+    storage.objects.add(uploaded)
+    await attach(NOK, { photoRef: uploaded })
+
+    const card = await bodyOf(await as(BEAM, runner(NOK)))
+    expect(card['photoUrl']).toBe(`http://localhost:9000/profile-service/${uploaded}`)
+    expect('photoRef' in card).toBe(false)
+  })
+
+  it('removes the photo it replaces', async () => {
+    await givenAProfile()
+    const replacement = `photos/${NOK}/def`
+    storage.objects.add(uploaded)
+    storage.objects.add(replacement)
+    await attach(NOK, { photoRef: uploaded })
+    await attach(NOK, { photoRef: replacement })
+    expect(storage.removedKeys).toEqual([uploaded])
+  })
+
+  it('422 on photoRef for a key that was never uploaded', async () => {
+    await givenAProfile()
+    const response = await attach(NOK, { photoRef: uploaded })
+    const body = await bodyOf(response)
+    await expectContract('attachPhoto', 422, response)
+    expect(body).toMatchObject({ code: 'validation_failed', fieldErrors: { photoRef: expect.any(String) } })
+  })
+
+  it('422 for another runner’s key, even one that exists, and nothing of theirs is removed', async () => {
+    // Review Focus 5.
+    await givenAProfile()
+    const theirs = `photos/${BEAM}/abc`
+    storage.objects.add(theirs)
+    const response = await attach(NOK, { photoRef: theirs })
+    const body = await bodyOf(response)
+    await expectContract('attachPhoto', 422, response)
+
+    expect(body).toMatchObject({ fieldErrors: { photoRef: expect.any(String) } })
+    expect(storage.removedKeys).toEqual([])
+    expect(storage.objects.has(theirs)).toBe(true)
+  })
+
+  it('422 when the body has no photoRef', async () => {
+    await givenAProfile()
+    await expectContract('attachPhoto', 422, await attach(NOK, { ref: uploaded }))
+  })
+
+  it('503 storage_unavailable when object storage cannot be asked', async () => {
+    await givenAProfile()
+    storage.unreachable = true
+    await expectContract('attachPhoto', 503, await attach(NOK, { photoRef: uploaded }))
+  })
+
+  it('404 before the first save', async () => {
+    await expectContract('attachPhoto', 404, await attach(NOK, { photoRef: uploaded }))
+  })
+
+  it('401 without a token', async () => {
+    const response = await app.request(`${ME}/photo`, {
+      method: 'PUT',
+      body: JSON.stringify({ photoRef: uploaded }),
+      headers: { 'content-type': 'application/json' },
+    })
+    await expectContract('attachPhoto', 401, response)
+  })
+
+  it('publishes ProfileUpdated with the photo', async () => {
+    await givenAProfile()
+    storage.objects.add(uploaded)
+    events.published.length = 0
+    await attach(NOK, { photoRef: uploaded })
+    expect(events.published.at(-1)?.profile.photoRef).toBe(uploaded)
+  })
+})
+
+describe('DELETE /api/v1/me/profile/photo — removePhoto', () => {
+  const remove = (id: string): Promise<Response> => as(id, `${ME}/photo`, { method: 'DELETE' })
+  const uploaded = `photos/${NOK}/abc`
+
+  async function givenAPhoto(): Promise<void> {
+    await givenAProfile()
+    storage.objects.add(uploaded)
+    const response = await as(NOK, `${ME}/photo`, { method: 'PUT', body: JSON.stringify({ photoRef: uploaded }) })
+    expect(response.status).toBe(200)
+  }
+
+  it('200 takes the photo off, and removes it from storage', async () => {
+    await givenAPhoto()
+    const response = await remove(NOK)
+    const body = await bodyOf(response)
+    await expectContract('removePhoto', 200, response)
+
+    expect(body).toMatchObject({ photoRef: null, photoUrl: null })
+    expect(storage.removedKeys).toEqual([uploaded])
+  })
+
+  it('200 when there is no photo, changing nothing', async () => {
+    await givenAProfile()
+    await expectContract('removePhoto', 200, await remove(NOK))
+    expect(storage.removedKeys).toEqual([])
+  })
+
+  it('200 while object storage is down — the photo comes off, and the object is logged as an orphan', async () => {
+    // Review Focus 4.
+    await givenAPhoto()
+    storage.unreachable = true
+    const response = await remove(NOK)
+    await expectContract('removePhoto', 200, response.clone())
+
+    expect((await bodyOf(response))['photoRef']).toBeNull()
+    expect(orphaned).toEqual([NOK])
+  })
+
+  it('404 before the first save', async () => {
+    await expectContract('removePhoto', 404, await remove(NOK))
+  })
+
+  it('401 without a token', async () => {
+    await expectContract('removePhoto', 401, await app.request(`${ME}/photo`, { method: 'DELETE' }))
+  })
+
+  it('publishes ProfileUpdated without the photo', async () => {
+    await givenAPhoto()
+    events.published.length = 0
+    await remove(NOK)
+    expect(events.published.at(-1)?.profile.photoRef).toBeNull()
+  })
+})
+
+describe('object storage down costs only photos', () => {
+  it('saving, reading the profile and reading a card all still answer 200', async () => {
+    // Review Focus 4: nothing but the photo routes asks storage.
+    storage.unreachable = true
+    await expectContract('saveProfile', 200, await save(NOK, minimal))
+    await expectContract('getProfile', 200, await as(NOK, ME))
+    await expectContract('getPublicProfile', 200, await as(BEAM, runner(NOK)))
+  })
+})
+
+describe('an edit form that sends back what it read', () => {
+  it('200, and the id, the hidden set and the photo stay as they were', async () => {
+    // Review Focus 2: the owner's view, round-tripped through a save with one field changed.
+    await givenAProfile()
+    await as(NOK, `${ME}/visibility`, { method: 'PUT', body: JSON.stringify({ hiddenFields: ['bio'] }) })
+    storage.objects.add(`photos/${NOK}/abc`)
+    await as(NOK, `${ME}/photo`, { method: 'PUT', body: JSON.stringify({ photoRef: `photos/${NOK}/abc` }) })
+
+    const read = await bodyOf(await as(NOK, ME))
+    const response = await save(NOK, { ...read, name: 'Nok R.' })
+    const body = await bodyOf(response)
+    await expectContract('saveProfile', 200, response)
+
+    expect(body).toEqual({ ...read, name: 'Nok R.' })
+  })
+})
+
 describe('the old paths are gone', () => {
   it.each([
     ['GET', `/v1/profiles/${NOK}`],
@@ -562,6 +802,9 @@ describe('an unexpected failure', () => {
     ['saveProfile', 'PUT', ME, JSON.stringify(minimal)],
     ['getPublicProfile', 'GET', runner(NOK), undefined],
     ['setFieldVisibility', 'PUT', `${ME}/visibility`, JSON.stringify({ hiddenFields: [] })],
+    ['createPhotoUpload', 'POST', `${ME}/photo-uploads`, undefined],
+    ['attachPhoto', 'PUT', `${ME}/photo`, JSON.stringify({ photoRef: `photos/${NOK}/abc` })],
+    ['removePhoto', 'DELETE', `${ME}/photo`, undefined],
   ] as const)('%s becomes a 500 matching the default response', async (operationId, method, path, body) => {
     const token = await identity.tokenFor(NOK)
     const response = await brokenApp().request(path, {

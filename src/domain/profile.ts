@@ -193,6 +193,20 @@ export class Profile {
     return new Profile({ ...this.#fields(), hiddenFields })
   }
 
+  /**
+   * Puts an uploaded photo on the profile — domain.md §3 `attachPhoto()`. §4's rule on the key is
+   * the constructor's; whether it is this runner's and was really uploaded is storage's to say, so
+   * the use case asks before it gets here.
+   */
+  attachPhoto(photoRef: string): Profile {
+    return new Profile({ ...this.#fields(), photoRef })
+  }
+
+  /** Takes the photo off the profile — domain.md §3 `removePhoto()`. */
+  removePhoto(): Profile {
+    return new Profile({ ...this.#fields(), photoRef: null })
+  }
+
   /** The point as other runners see it — domain.md §4 "Area cells". Worked out, never stored. */
   areaCell(): AreaCell {
     return new AreaCell(this.latitude, this.longitude)

@@ -2,6 +2,7 @@ import type { Context, ErrorHandler, NotFoundHandler } from 'hono'
 import type { Logger } from 'pino'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { ZodError } from 'zod'
+import { StorageUnavailableError } from '../../application/errors.ts'
 import { InvalidProfileFieldError, ProfileNotFoundError } from '../../domain/errors.ts'
 import type { Env } from './context.ts'
 import { MalformedBodyError, UnauthorizedError } from './errors.ts'
@@ -63,6 +64,9 @@ function failureFor(error: Error): Failure | undefined {
   if (error instanceof ProfileNotFoundError) {
     return { status: 404, code: 'profile_not_found', message: error.message }
   }
+  if (error instanceof StorageUnavailableError) {
+    return { status: 503, code: 'storage_unavailable', message: 'object storage is unreachable; try again later' }
+  }
   return undefined
 }
 
@@ -84,6 +88,9 @@ function answer(c: Context<Env>, { status, code, message, fieldErrors }: Failure
 export function errorHandler(base: Logger): ErrorHandler<Env> {
   return (error, c) => {
     const failure = failureFor(error)
+    // The client is told only to try again, so this line is the record of what storage said —
+    // a warning, since the service itself is well and only photos are affected.
+    if (error instanceof StorageUnavailableError) (c.get('log') ?? base).warn({ err: error }, 'object storage did not answer')
     if (failure !== undefined) return answer(c, failure)
 
     // A 500 deliberately tells the client nothing useful, so this line is the only record

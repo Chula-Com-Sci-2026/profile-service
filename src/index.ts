@@ -1,9 +1,12 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { serve } from '@hono/node-server'
 import { pino } from 'pino'
+import { attachPhoto } from './application/attach-photo.ts'
+import { createPhotoUpload } from './application/create-photo-upload.ts'
 import { getProfile } from './application/get-profile.ts'
 import { getPublicProfile } from './application/get-public-profile.ts'
 import type { Publishing } from './application/publishing.ts'
+import { removePhoto } from './application/remove-photo.ts'
 import { saveProfile } from './application/save-profile.ts'
 import { setFieldVisibility } from './application/set-field-visibility.ts'
 import { loadConfig } from './infrastructure/config.ts'
@@ -11,6 +14,8 @@ import { createDatabase } from './infrastructure/database.ts'
 import { DrizzleProfileRepository } from './infrastructure/drizzle-profile-repository.ts'
 import { httpProfileEvents, logUndelivered } from './infrastructure/http-profile-events.ts'
 import { identityServiceTokens } from './infrastructure/identity-service-tokens.ts'
+import { logOrphan } from './infrastructure/log-orphan.ts'
+import { createPhotoStorage } from './infrastructure/minio-photo-storage.ts'
 import { photoUrlFor } from './infrastructure/photo-url.ts'
 import { silentProfileEvents } from './infrastructure/silent-profile-events.ts'
 import { createApp } from './interface/http/app.ts'
@@ -37,8 +42,15 @@ const database = createDatabase(config.databaseUrl, (error) => {
 })
 const repository = new DrizzleProfileRepository(database.db)
 
+/**
+ * Photos live in object storage. Building the clients asks storage nothing, so a store that is
+ * down costs the photo routes and nothing else — not startup, not /ready, not a read.
+ */
+const photos = createPhotoStorage(config.objectStorage)
 /** A photo's public address, from its key. Whatever serialises a card is handed this. */
 const photoUrl = photoUrlFor(config.objectStorage)
+/** A replaced or removed photo storage would not delete — logged and tolerated, see logOrphan. */
+const onOrphan = logOrphan(logger, currentCorrelationId, 'a photo object was orphaned')
 
 /**
  * Profile events to Buddy Discovery (ADR-0019): REST now, a broker later, behind one port.
@@ -70,6 +82,9 @@ const app = createApp({
     getProfile: getProfile(repository),
     getPublicProfile: getPublicProfile(repository),
     setFieldVisibility: setFieldVisibility(repository, publishing),
+    createPhotoUpload: createPhotoUpload(repository, photos),
+    attachPhoto: attachPhoto(repository, photos, onOrphan, publishing),
+    removePhoto: removePhoto(repository, photos, onOrphan, publishing),
   },
   logger,
   authentication: config.accessToken,

@@ -1,6 +1,9 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { sql } from 'drizzle-orm'
+import { attachPhoto } from '../src/application/attach-photo.ts'
+import { createPhotoUpload } from '../src/application/create-photo-upload.ts'
+import { StorageUnavailableError } from '../src/application/errors.ts'
 import { saveProfile } from '../src/application/save-profile.ts'
 import type { Profile } from '../src/domain/profile.ts'
 import { loadDatabaseUrl, loadEventPublishing, loadObjectStorage } from '../src/infrastructure/config.ts'
@@ -8,13 +11,15 @@ import { createDatabase } from '../src/infrastructure/database.ts'
 import { DrizzleProfileRepository } from '../src/infrastructure/drizzle-profile-repository.ts'
 import { httpProfileEvents } from '../src/infrastructure/http-profile-events.ts'
 import { identityServiceTokens } from '../src/infrastructure/identity-service-tokens.ts'
+import { createPhotoStorage } from '../src/infrastructure/minio-photo-storage.ts'
 import { photoUrlFor } from '../src/infrastructure/photo-url.ts'
 import { silentProfileEvents } from '../src/infrastructure/silent-profile-events.ts'
 import { toContent } from '../src/interface/http/profile-input.ts'
 import { profileSave } from '../src/interface/http/validators.ts'
+import { seedPhotos } from './seed-photos.ts'
 
 /**
- * Loads `seed.json` into the database.
+ * Loads `seed.json` into the database, and `photos/` into object storage.
  *
  * Profiles go in through `saveProfile`, not a bulk INSERT, so a runner that breaks a §4 rule
  * fails here rather than landing in the table and failing the next time somebody reads it. Each
@@ -33,6 +38,10 @@ if (!Array.isArray(entries)) throw new Error('seed.json must hold an array of ru
 const database = createDatabase(loadDatabaseUrl(), (error) => {
   console.error('an idle database connection failed:', error.message)
 })
+const storageSettings = loadObjectStorage()
+const photos = createPhotoStorage(storageSettings)
+const photoUrl = photoUrlFor(storageSettings)
+const repository = new DrizzleProfileRepository(database.db)
 
 /**
  * The rows go in under a transaction, and an event must not leave before its change is
@@ -53,7 +62,7 @@ const publishing = {
             clientSecret: eventSettings.clientSecret,
           }),
           currentCorrelationId: () => undefined,
-          photoUrl: photoUrlFor(loadObjectStorage()),
+          photoUrl,
         }),
   onUndelivered: (id: string, error: unknown) => {
     console.error(`the event for ${id} was not delivered:`, error instanceof Error ? error.message : error)
@@ -86,7 +95,29 @@ try {
     await publishing.events.updated(profile).catch((error: unknown) => publishing.onUndelivered(profile.id, error))
   }
 
-  console.log(`\n${entries.length} runners seeded`)
+  // After the rows commit: holding a transaction open across calls to storage would be a poor trade
+  // for a demo seeder. A runner with no photos/{id}.png simply has no photo.
+  const attached = await seedPhotos(
+    seeded.map((profile) => profile.id),
+    {
+      createPhotoUpload: createPhotoUpload(repository, photos),
+      attachPhoto: attachPhoto(repository, photos, (id, error) => console.error(`a photo object was orphaned for ${id}:`, error), publishing),
+      photoOf: (id) => {
+        const file = here(`./photos/${id}.png`)
+        return existsSync(file) ? readFileSync(file) : undefined
+      },
+      // The URL is signed over the *public* endpoint, so whoever runs this must be able to reach
+      // it — from the host in development, that is OBJECT_STORAGE_PUBLIC_ENDPOINT.
+      put: (url, bytes) =>
+        fetch(url, { method: 'PUT', body: bytes }).catch((error: unknown) => {
+          throw new StorageUnavailableError(error)
+        }),
+      log: (line) => console.log(line),
+      warn: (line) => console.warn(line),
+    },
+  )
+
+  console.log(`\n${entries.length} runners seeded, ${attached} with photos`)
 } finally {
   await database.end()
 }

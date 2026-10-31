@@ -48,3 +48,6 @@ export const visibility = z.object({
 })
 
 export type VisibilityBody = z.infer<typeof visibility>
+
+/** The attach route's body: the key an upload link handed out. Whether it is this runner's is storage's to say. */
+export const photoAttachment = z.object({ photoRef: z.string() })

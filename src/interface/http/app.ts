@@ -1,7 +1,10 @@
 import { type Context, Hono } from 'hono'
 import type { Logger } from 'pino'
+import type { AttachPhoto } from '../../application/attach-photo.ts'
+import type { CreatePhotoUpload } from '../../application/create-photo-upload.ts'
 import type { GetProfile } from '../../application/get-profile.ts'
 import type { GetPublicProfile } from '../../application/get-public-profile.ts'
+import type { RemovePhoto } from '../../application/remove-photo.ts'
 import type { SaveProfile } from '../../application/save-profile.ts'
 import type { SetFieldVisibility } from '../../application/set-field-visibility.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
@@ -12,13 +15,16 @@ import { MalformedBodyError } from './errors.ts'
 import { toContent, toHiddenFields } from './profile-input.ts'
 import { cardView, ownerView, type PhotoUrl } from './profile-view.ts'
 import { requestContext } from './request-context.ts'
-import { profileSave, visibility } from './validators.ts'
+import { photoAttachment, profileSave, visibility } from './validators.ts'
 
 export type UseCases = {
   saveProfile: SaveProfile
   getProfile: GetProfile
   getPublicProfile: GetPublicProfile
   setFieldVisibility: SetFieldVisibility
+  createPhotoUpload: CreatePhotoUpload
+  attachPhoto: AttachPhoto
+  removePhoto: RemovePhoto
 }
 
 /**
@@ -105,6 +111,22 @@ export function createApp({ useCases, logger, authentication: auth, readiness, p
   app.put(`${ME}/visibility`, async (c) => {
     const body = visibility.parse(await jsonBody(c))
     return c.json(ownerView(await useCases.setFieldVisibility(c.get('caller').id, toHiddenFields(body)), photoUrl))
+  })
+
+  // The resource created here is the *permission*, not the photo — which is why the path is
+  // photo-uploads and why nothing here accepts image bytes. The runner attaches the key once the
+  // upload succeeds, so a failed upload leaves nothing pointing at a missing object.
+  app.post(`${ME}/photo-uploads`, async (c) => {
+    return c.json(await useCases.createPhotoUpload(c.get('caller').id), 201)
+  })
+
+  app.put(`${ME}/photo`, async (c) => {
+    const body = photoAttachment.parse(await jsonBody(c))
+    return c.json(ownerView(await useCases.attachPhoto(c.get('caller').id, body.photoRef), photoUrl))
+  })
+
+  app.delete(`${ME}/photo`, async (c) => {
+    return c.json(ownerView(await useCases.removePhoto(c.get('caller').id), photoUrl))
   })
 
   // The card, to anyone — its owner included, so a runner sees exactly what others see. Ids are
