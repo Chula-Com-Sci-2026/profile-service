@@ -17,7 +17,7 @@ export type CloudEvent = {
   specversion: '1.0'
   id: string
   source: 'profile-service'
-  type: 'ProfileUpdated' | 'ProfileDeleted'
+  type: 'ProfileUpdated'
   time: string
   subject: string
   datacontenttype?: 'application/json'
@@ -30,7 +30,6 @@ const SOURCE = 'profile-service'
 /** `:1` is the version of `data`. A breaking change moves it to `:2`; an added optional field does not. */
 const DATASCHEMA = {
   ProfileUpdated: 'urn:cant-run-alone:profile-service:ProfileUpdated:1',
-  ProfileDeleted: 'urn:cant-run-alone:profile-service:ProfileDeleted:1',
 } as const
 
 const paceRangeJson = (range: PaceRange) => ({
@@ -83,18 +82,5 @@ export function profileUpdated(profile: Profile, at: Date = new Date(), id: stri
     datacontenttype: 'application/json',
     dataschema: DATASCHEMA.ProfileUpdated,
     data: { card: card(profile.publicCard()), matching: matching(profile) },
-  }
-}
-
-/** A profile was removed. No data: `subject` names the runner. */
-export function profileDeleted(userId: string, at: Date = new Date(), id: string = randomUUID()): CloudEvent {
-  return {
-    specversion: '1.0',
-    id,
-    source: SOURCE,
-    type: 'ProfileDeleted',
-    time: at.toISOString(),
-    subject: userId,
-    dataschema: DATASCHEMA.ProfileDeleted,
   }
 }

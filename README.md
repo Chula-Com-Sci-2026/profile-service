@@ -51,7 +51,6 @@ Ray's profile is there once `npm run db:seed` has run (see Local development).
 | `PUT` | `/v1/profiles/{userId}` | create one — 409 if it already exists |
 | `GET` | `/v1/profiles/{userId}` | read one |
 | `PATCH` | `/v1/profiles/{userId}` | change one — `null` clears a field |
-| `DELETE` | `/v1/profiles/{userId}` | delete one, permanently |
 | `POST` | `/v1/profiles/{userId}/avatar-uploads` | create an upload — a URL to PUT the avatar to |
 | `GET` | `/up` | is the process alive? |
 | `GET` | `/ready` | should traffic come here? |

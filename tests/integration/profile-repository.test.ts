@@ -152,18 +152,6 @@ describe('update', () => {
   })
 })
 
-describe('delete', () => {
-  it('removes the profile and reports that a row went', async () => {
-    await repository.insert(aFullProfile())
-    expect(await repository.delete('7f3a9c2e15')).toBe(true)
-    expect(await repository.findById('7f3a9c2e15')).toBeNull()
-  })
-
-  it('reports that nothing went when there is no such profile', async () => {
-    expect(await repository.delete('nobody')).toBe(false)
-  })
-})
-
 describe('row to domain is a boundary', () => {
   it('reports a corrupt row as our problem, keeping the field error as the cause', async () => {
     await db.execute(sql`

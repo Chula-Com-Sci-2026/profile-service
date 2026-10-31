@@ -25,7 +25,6 @@ const app = createApp({
     createProfile: rejects,
     getProfile: rejects,
     updateProfile: rejects,
-    deleteProfile: rejects,
     createAvatarUpload: rejects,
   },
   logger: pino({ level: 'silent' }),

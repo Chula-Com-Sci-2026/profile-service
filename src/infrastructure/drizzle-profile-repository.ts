@@ -93,9 +93,4 @@ export class DrizzleProfileRepository implements ProfileRepository {
       throw new ProfileWriteFailedError(error)
     }
   }
-
-  async delete(userId: string): Promise<boolean> {
-    const result = await this.#db.delete(profiles).where(eq(profiles.userId, userId))
-    return (result.rowCount ?? 0) > 0
-  }
 }

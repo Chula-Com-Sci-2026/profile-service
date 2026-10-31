@@ -74,15 +74,6 @@ describe('httpProfileEvents — delivering', () => {
     expect(server.received[0]?.headers['x-correlation-id']).toMatch(/^[0-9a-f-]{36}$/)
   })
 
-  it('sends ProfileDeleted naming the runner', async () => {
-    const server = await discovery(() => ({ status: 200 }))
-    const publisher = httpProfileEvents({ subscribers: [server.url], tokens: tokens().fake, currentCorrelationId: () => 'r', ...fast })
-
-    await publisher.deleted('7f3a9c2e15')
-
-    expect(JSON.parse(server.received[0]?.body ?? '{}')).toMatchObject({ type: 'ProfileDeleted', subject: '7f3a9c2e15' })
-  })
-
   it('gives every subscriber the same event, so each can deduplicate by id', async () => {
     const one = await discovery(() => ({ status: 202 }))
     const two = await discovery(() => ({ status: 202 }))

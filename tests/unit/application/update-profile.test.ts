@@ -51,7 +51,6 @@ describe('updateProfile', () => {
       findById: async () => stored,
       insert: async () => {},
       update: async () => false, // gone by the time we wrote
-      delete: async () => true,
     }
 
     await expect(updateProfile(repository, new FakeAvatarStorage(), () => {}, publishing())('7f3a9c2e15', { displayName: 'Beam' })).rejects.toThrow(

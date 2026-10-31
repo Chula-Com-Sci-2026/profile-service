@@ -36,8 +36,8 @@ export function updateProfile(
 
     // An avatar the profile no longer points at — replaced or cleared — is unreachable, since
     // every upload mints a fresh key. Dropping it here is what stops a change leaving litter.
-    // After the write and best-effort, for the same reason deleteProfile is: storage and the
-    // database cannot commit together, and the change is the thing that must not be lost.
+    // After the write and best-effort: storage and the database cannot commit together, and the
+    // change is the thing that must not be lost.
     const displaced = current.avatarRef
     if (displaced !== undefined && displaced !== next.avatarRef) {
       await storage.remove(userId, displaced).catch((error: unknown) => onOrphan(userId, error))

@@ -23,7 +23,7 @@ describe('the key it mints', () => {
     )
   })
 
-  it('shares the prefix removeAll deletes by — the coupling that makes deletion work', async () => {
+  it('shares the prefix remove checks ownership by — the coupling that keeps one runner off another\u2019s images', async () => {
     // If an upload key ever stops starting with `avatars/{userId}/`, uploads keep working and
     // deletion silently matches nothing. Nothing else in the suite would notice.
     const { avatarRef } = await storage.authoriseUpload('b41d8e0a63')

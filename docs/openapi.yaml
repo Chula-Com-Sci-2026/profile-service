@@ -11,8 +11,8 @@ info:
     which is why creation is a `PUT`, not a `POST` to a collection. There is no
     collection: profiles cannot be listed or searched.
 
-    It also sends two events to the services that subscribe — `ProfileUpdated` and
-    `ProfileDeleted` — described under `webhooks`.
+    It also sends an event to the services that subscribe, `ProfileUpdated`, described under
+    `webhooks`.
 
     Other runners see a profile's public card: the fields its owner has not hidden
     (`hiddenFields`), the area only as its cell. The owner sees everything.
@@ -89,18 +89,6 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }   # only the owner may change a profile
         '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
         '422': { $ref: '#/components/responses/ValidationFailed' }   # malformed, the wrong shape, or a value that breaks a rule in domain.md §4
-        default: { $ref: '#/components/responses/InternalError' }
-
-    delete:
-      operationId: deleteProfile
-      summary: Delete a runner's profile, permanently
-      responses:
-        '204':
-          description: Deleted
-          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
-        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
-        '403': { $ref: '#/components/responses/Forbidden' }   # only the owner may delete a profile
-        '404': { $ref: '#/components/responses/ProfileNotFound' }   # no profile for that userId
         default: { $ref: '#/components/responses/InternalError' }
 
   /v1/profiles/{userId}/avatar-uploads:
@@ -255,10 +243,7 @@ webhooks:
         fields Buddy Discovery matches on, even when hidden. Each attempt has a 1 s timeout; three
         attempts, retried on a network error, a timeout, 408, 429 or 5xx, not on any other 4xx.
         A subscriber still down after them loses the event (ADR-0019). Deduplicate by `id`. Order
-        by `time` per `subject`, ProfileDeleted included: keep the latest event for each runner,
-        and on ProfileDeleted keep a tombstone — the subject and its `time` — so a retried
-        ProfileUpdated older than the deletion is ignored, while a newer one (the runner made a
-        profile again) replaces it. Equal times are applied in arrival order. A breaking change to
+        by `time` per `subject`. Equal times are applied in arrival order. A breaking change to
         `data` moves `dataschema` to `:2`; an added optional field does not.
       security:
         - serviceToken: []
@@ -273,29 +258,6 @@ webhooks:
         content:
           application/cloudevents+json:
             schema: { $ref: '#/components/schemas/ProfileUpdatedEvent' }
-      responses:
-        '2XX': { description: Delivered. Any 2xx counts. }
-
-  ProfileDeleted:
-    post:
-      summary: A profile was removed
-      description: >-
-        Sent like ProfileUpdated, after a profile is removed. It carries no `data`; `subject`
-        names the runner. Drop the candidate, and keep a tombstone with this `time` so a late
-        ProfileUpdated cannot bring it back (see ProfileUpdated).
-      security:
-        - serviceToken: []
-      parameters:
-        - name: X-Correlation-Id
-          in: header
-          required: true
-          description: The correlation id of the request that caused the event, or a fresh one when no request did.
-          schema: { $ref: '#/components/schemas/CorrelationId' }
-      requestBody:
-        required: true
-        content:
-          application/cloudevents+json:
-            schema: { $ref: '#/components/schemas/ProfileDeletedEvent' }
       responses:
         '2XX': { description: Delivered. Any 2xx counts. }
 
@@ -591,15 +553,6 @@ components:
           properties:
             card:     { $ref: '#/components/schemas/PublicCard' }
             matching: { $ref: '#/components/schemas/Matching' }
-
-    ProfileDeletedEvent:
-      allOf: [{ $ref: '#/components/schemas/CloudEvent' }]
-      unevaluatedProperties: false
-      properties:
-        type:            { const: ProfileDeleted }
-        dataschema:      { const: 'urn:cant-run-alone:profile-service:ProfileDeleted:1' }
-        datacontenttype: false
-        data:            false
 
     PublicCard:
       type: object

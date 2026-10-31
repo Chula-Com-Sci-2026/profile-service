@@ -24,13 +24,9 @@ export type AvatarStorage = {
   /**
    * Removes one object, by the key a profile used to hold — and only if it belongs to that
    * runner. `avatarRef` is client-supplied and any profile is readable, so without the userId
-   * one runner can name another's key and have it deleted for them. Best effort, like
-   * removeAll: an orphaned image beats a profile that would not accept a change.
+   * one runner can name another's key and have it deleted for them. Best effort: storage and the
+   * database cannot commit together, and an orphaned image beats a profile that would not accept
+   * a change.
    */
   remove: (userId: string, avatarRef: string) => Promise<void>
-  /**
-   * Removes every avatar a runner has. Best effort by nature: storage and the database cannot
-   * commit together, and losing the profile is not the outcome to prefer.
-   */
-  removeAll: (userId: string) => Promise<void>
 }

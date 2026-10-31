@@ -36,7 +36,6 @@ describe('createProfile', () => {
       },
       insert: async () => {},
       update: async () => true,
-      delete: async () => true,
     }
 
     await createProfile(repository, publishing())(fieldsFor())

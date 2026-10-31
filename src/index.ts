@@ -3,7 +3,6 @@ import { serve } from '@hono/node-server'
 import { pino } from 'pino'
 import { createAvatarUpload } from './application/create-avatar-upload.ts'
 import { createProfile } from './application/create-profile.ts'
-import { deleteProfile } from './application/delete-profile.ts'
 import { getProfile } from './application/get-profile.ts'
 import type { Publishing } from './application/publishing.ts'
 import { updateProfile } from './application/update-profile.ts'
@@ -72,13 +71,6 @@ const app = createApp({
       repository,
       avatars,
       logOrphan(logger, currentCorrelationId, 'an avatar object was orphaned by a profile change'),
-      publishing,
-    ),
-    // The profile is gone and its images are not — logged and tolerated, see logOrphan.
-    deleteProfile: deleteProfile(
-      repository,
-      avatars,
-      logOrphan(logger, currentCorrelationId, 'avatar objects orphaned after deleting a profile'),
       publishing,
     ),
     createAvatarUpload: createAvatarUpload(repository, avatars),

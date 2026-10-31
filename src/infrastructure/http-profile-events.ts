@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { ProfileEvents } from '../application/ports/profile-events.ts'
 import type { ServiceTokens } from './identity-service-tokens.ts'
-import { type CloudEvent, profileDeleted, profileUpdated } from './profile-published-language.ts'
+import { type CloudEvent, profileUpdated } from './profile-published-language.ts'
 
 /**
  * ADR-0019: "a short timeout and a few retries". At worst about 3.6 s added to a runner's request:
@@ -155,7 +155,6 @@ export function httpProfileEvents(options: HttpProfileEventsOptions): ProfileEve
 
   return {
     updated: (profile) => publish(profileUpdated(profile)),
-    deleted: (userId) => publish(profileDeleted(userId)),
   }
 }
 

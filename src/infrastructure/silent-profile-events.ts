@@ -6,5 +6,4 @@ import type { ProfileEvents } from '../application/ports/profile-events.ts'
  */
 export const silentProfileEvents: ProfileEvents = {
   updated: async () => {},
-  deleted: async () => {},
 }

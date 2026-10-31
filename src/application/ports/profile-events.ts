@@ -9,12 +9,10 @@ import type { Profile } from '../../domain/profile.ts'
  *
  * It takes the domain `Profile`, not a payload. What leaves this service — the public snapshot,
  * the area only as its cell — is the adapter's published language, not this layer's business.
- * Either call may reject when delivery fails; the use cases catch that, because by then the
+ * The call may reject when delivery fails; the use cases catch that, because by then the
  * change is already saved.
  */
 export type ProfileEvents = {
   /** After a profile is created or changed. */
   updated: (profile: Profile) => Promise<void>
-  /** After a profile is removed. */
-  deleted: (userId: string) => Promise<void>
 }

@@ -26,10 +26,6 @@ export class InMemoryProfileRepository implements ProfileRepository {
     return true
   }
 
-  async delete(userId: string): Promise<boolean> {
-    return this.#profiles.delete(userId)
-  }
-
   /** Test seam: put a profile in place without going through insert. */
   given(profile: Profile): void {
     this.#profiles.set(profile.userId, profile)

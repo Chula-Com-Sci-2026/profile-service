@@ -7,7 +7,6 @@ import { pino } from 'pino'
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest'
 import { createAvatarUpload } from '../../src/application/create-avatar-upload.ts'
 import { createProfile } from '../../src/application/create-profile.ts'
-import { deleteProfile } from '../../src/application/delete-profile.ts'
 import { getProfile } from '../../src/application/get-profile.ts'
 import { updateProfile } from '../../src/application/update-profile.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
@@ -33,7 +32,6 @@ const storage = {
       expiresInSeconds: 300,
     }),
   remove: () => Promise.resolve(),
-  removeAll: () => Promise.resolve(),
 }
 
 const NOK = '33333333-3333-4333-8333-333333333333'
@@ -55,7 +53,6 @@ const publishing = () => ({
       correlationIdWhenPublished = currentCorrelationId()
       return events.updated(profile)
     },
-    deleted: (userId: string) => events.deleted(userId),
   },
   onUndelivered: (userId: string) => {
     undelivered.push(userId)
@@ -74,7 +71,6 @@ beforeAll(async () => {
       createProfile: createProfile(repository, publishing()),
       getProfile: getProfile(repository),
       updateProfile: updateProfile(repository, storage, () => {}, publishing()),
-      deleteProfile: deleteProfile(repository, storage, () => {}, publishing()),
       createAvatarUpload: createAvatarUpload(repository, storage),
     },
     logger: pino({ level: 'silent' }),
@@ -449,34 +445,6 @@ describe('PATCH /v1/profiles/{userId} — updateProfile', () => {
   })
 })
 
-describe('DELETE /v1/profiles/{userId} — deleteProfile', () => {
-  const remove = (userId: string, as_ = userId): Promise<Response> =>
-    as(as_, `/v1/profiles/${userId}`, { method: 'DELETE' })
-
-  it('204 removes it, with no body', async () => {
-    await givenAProfile()
-    await expectContract('deleteProfile', 204, await remove(NOK))
-    await expectContract('getProfile', 404, await as(NOK, `/v1/profiles/${NOK}`))
-  })
-
-  it('401 without a token', async () => {
-    await expectContract(
-      'deleteProfile',
-      401,
-      await app.request(`/v1/profiles/${NOK}`, { method: 'DELETE' }),
-    )
-  })
-
-  it('403 when removing someone else’s profile', async () => {
-    await givenAProfile()
-    await expectContract('deleteProfile', 403, await remove(NOK, BEAM))
-  })
-
-  it('404 when there is nothing to remove', async () => {
-    await expectContract('deleteProfile', 404, await remove(BEAM))
-  })
-})
-
 describe('GET /up', () => {
   it('200 without a token — it is the one public endpoint', async () => {
     const response = await app.request('/up')
@@ -490,7 +458,6 @@ describe('GET /up', () => {
         createProfile: () => Promise.reject(new Error('database is down')),
         getProfile: () => Promise.reject(new Error('database is down')),
         updateProfile: () => Promise.reject(new Error('database is down')),
-        deleteProfile: () => Promise.reject(new Error('database is down')),
         createAvatarUpload: () => Promise.reject(new Error('database is down')),
       },
       logger: pino({ level: 'silent' }),
@@ -544,7 +511,7 @@ describe('the correlation id — X-Correlation-Id', () => {
     const logger = pino({ level: 'info' }, { write: (line: string) => void lines.push(JSON.parse(line) as Record<string, unknown>) })
     const onFire = (): Promise<never> => Promise.reject(new Error('the pool is on fire'))
     const logged = createApp({
-      useCases: { createProfile: onFire, getProfile: onFire, updateProfile: onFire, deleteProfile: onFire, createAvatarUpload: onFire },
+      useCases: { createProfile: onFire, getProfile: onFire, updateProfile: onFire, createAvatarUpload: onFire },
       logger,
       authentication: identity.settings,
       readiness: alwaysReady,
@@ -570,7 +537,6 @@ describe('an unexpected failure', () => {
         createProfile: onFire,
         getProfile: onFire,
         updateProfile: onFire,
-        deleteProfile: onFire,
         createAvatarUpload: onFire,
       },
       logger: pino({ level: 'silent' }),
@@ -583,7 +549,6 @@ describe('an unexpected failure', () => {
     ['getProfile', 'GET', undefined],
     ['createProfile', 'PUT', JSON.stringify(minimal)],
     ['updateProfile', 'PATCH', JSON.stringify({ displayName: 'Nok R.' })],
-    ['deleteProfile', 'DELETE', undefined],
     ['createAvatarUpload', 'POST', undefined],
   ] as const)('%s becomes a 500 matching the default response', async (operationId, method, body) => {
     const token = await identity.tokenFor(NOK)
@@ -768,7 +733,6 @@ describe('a SyntaxError from below the route', () => {
         createProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
         getProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
         updateProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
-        deleteProfile: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
         createAvatarUpload: () => Promise.reject(new SyntaxError('a driver parsed bad JSON')),
       },
       logger: pino({ level: 'silent' }),
@@ -811,7 +775,6 @@ describe('GET /ready', () => {
         createProfile: () => Promise.reject(new Error('unused')),
         getProfile: () => Promise.reject(new Error('unused')),
         updateProfile: () => Promise.reject(new Error('unused')),
-        deleteProfile: () => Promise.reject(new Error('unused')),
         createAvatarUpload: () => Promise.reject(new Error('unused')),
       },
       logger: pino({ level: 'silent' }),
@@ -969,12 +932,6 @@ describe('profile events — the use cases tell subscribers', () => {
     expect(last?.type === 'updated' && last.profile.displayName).toBe('Nok R.')
   })
 
-  it('DELETE publishes ProfileDeleted', async () => {
-    await givenAProfile()
-    await expectContract('deleteProfile', 204, await as(NOK, `/v1/profiles/${NOK}`, { method: 'DELETE' }))
-    expect(events.published.at(-1)).toEqual({ type: 'deleted', userId: NOK })
-  })
-
   it('a refused write publishes nothing', async () => {
     await givenAProfile()
     events.published.length = 0
@@ -983,11 +940,10 @@ describe('profile events — the use cases tell subscribers', () => {
     expect(events.published).toEqual([])
   })
 
-  it('still answers 201, 200 and 204 when Buddy Discovery is down (ADR-0019)', async () => {
+  it('still answers 201 and 200 when Buddy Discovery is down (ADR-0019)', async () => {
     events.failWith = new Error('Buddy Discovery is down')
     await expectContract('createProfile', 201, await put(NOK, minimal))
     await expectContract('updateProfile', 200, await patch(NOK, { displayName: 'Nok R.' }))
-    await expectContract('deleteProfile', 204, await as(NOK, `/v1/profiles/${NOK}`, { method: 'DELETE' }))
-    expect(undelivered).toEqual([NOK, NOK, NOK])
+    expect(undelivered).toEqual([NOK, NOK])
   })
 })

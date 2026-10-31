@@ -2,7 +2,6 @@ import { type Context, Hono } from 'hono'
 import type { Logger } from 'pino'
 import type { CreateAvatarUpload } from '../../application/create-avatar-upload.ts'
 import type { CreateProfile } from '../../application/create-profile.ts'
-import type { DeleteProfile } from '../../application/delete-profile.ts'
 import type { GetProfile } from '../../application/get-profile.ts'
 import type { UpdateProfile } from '../../application/update-profile.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
@@ -20,7 +19,6 @@ export type UseCases = {
   createProfile: CreateProfile
   getProfile: GetProfile
   updateProfile: UpdateProfile
-  deleteProfile: DeleteProfile
   createAvatarUpload: CreateAvatarUpload
 }
 
@@ -114,11 +112,6 @@ export function createApp({ useCases, logger, authentication: auth, readiness }:
   // once the upload succeeds, so a failed upload leaves nothing pointing at a missing object.
   app.post(`${PROFILE}/avatar-uploads`, ownsTheProfile(), async (c) => {
     return c.json(await useCases.createAvatarUpload(c.req.param('userId')), 201)
-  })
-
-  app.delete(PROFILE, ownsTheProfile(), async (c) => {
-    await useCases.deleteProfile(c.req.param('userId'))
-    return c.body(null, 204)
   })
 
   return app

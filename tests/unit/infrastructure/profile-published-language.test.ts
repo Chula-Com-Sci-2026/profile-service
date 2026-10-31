@@ -8,7 +8,7 @@ import { PaceRange } from '../../../src/domain/pace-range.ts'
 import { PreferredRunTime } from '../../../src/domain/preferred-run-time.ts'
 import { Profile, type ProfileFields } from '../../../src/domain/profile.ts'
 import { UsualDistance } from '../../../src/domain/usual-distance.ts'
-import { matching, profileDeleted, profileUpdated } from '../../../src/infrastructure/profile-published-language.ts'
+import { matching, profileUpdated } from '../../../src/infrastructure/profile-published-language.ts'
 import { toView } from '../../../src/interface/http/profile-view.ts'
 
 /**
@@ -163,27 +163,5 @@ describe('ProfileUpdated', () => {
     const { card, matching: matched } = leaky.data as Data
     const data = { card: { ...card, hiddenFields: ['gear'] }, matching: matched }
     expect(schema('ProfileUpdatedEvent')({ ...leaky, data })).toBe(false)
-  })
-})
-
-describe('ProfileDeleted', () => {
-  it('names the runner and carries no data', () => {
-    const event = profileDeleted('7f3a9c2e15', at, 'event-2')
-
-    expect(event).toMatchObject({
-      specversion: '1.0',
-      id: 'event-2',
-      source: 'profile-service',
-      type: 'ProfileDeleted',
-      subject: '7f3a9c2e15',
-      dataschema: 'urn:cant-run-alone:profile-service:ProfileDeleted:1',
-    })
-    expect('data' in event).toBe(false)
-    expect('datacontenttype' in event).toBe(false)
-  })
-
-  it('obeys the ProfileDeletedEvent schema in openapi.yaml', () => {
-    const validate = schema('ProfileDeletedEvent')
-    expect(validate(profileDeleted('7f3a9c2e15', at)), ajv.errorsText(validate.errors)).toBe(true)
   })
 })

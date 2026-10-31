@@ -3,8 +3,8 @@ import type { Profile } from './profile.ts'
 /**
  * How the domain reaches storage. Declared here, implemented in `infrastructure/`.
  *
- * Reads report absence, writes raise conflicts: `findById` returns null and the writes
- * report whether a row moved, because a missing profile is a normal result of a query.
+ * Reads report absence, writes raise conflicts: `findById` returns null and `update`
+ * reports whether a row moved, because a missing profile is a normal result of a query.
  * `insert` is the exception — a unique violation is not a normal outcome of a write,
  * so it throws ProfileAlreadyExistsError.
  *
@@ -15,5 +15,4 @@ export interface ProfileRepository {
   findById(userId: string): Promise<Profile | null>
   insert(profile: Profile): Promise<void>
   update(profile: Profile): Promise<boolean>
-  delete(userId: string): Promise<boolean>
 }

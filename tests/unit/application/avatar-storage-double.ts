@@ -2,7 +2,6 @@ import type { AvatarStorage, AvatarUpload } from '../../../src/application/ports
 
 /** Records what it was asked to do, and can be told to fail. */
 export class FakeAvatarStorage implements AvatarStorage {
-  readonly removed: string[] = []
   readonly removedKeys: string[] = []
   authorised: string[] = []
   failOnRemove = false
@@ -24,10 +23,5 @@ export class FakeAvatarStorage implements AvatarStorage {
       throw new Error(`refusing to remove ${avatarRef}: it is outside avatars/${userId}/`)
     }
     this.removedKeys.push(avatarRef)
-  }
-
-  async removeAll(userId: string): Promise<void> {
-    if (this.failOnRemove) throw new Error('storage is unreachable')
-    this.removed.push(userId)
   }
 }
