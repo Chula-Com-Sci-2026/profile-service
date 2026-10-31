@@ -77,7 +77,7 @@ cp .env.example .env                              # the defaults match docker co
 npm ci
 docker compose up -d postgres minio create-bucket
 npm run db:migrate
-npm run db:seed                                   # five runners, four with avatars
+npm run db:seed                                   # seven runners, four with avatars
 npm run dev                                       # restarts on save, readable logs
 ```
 
