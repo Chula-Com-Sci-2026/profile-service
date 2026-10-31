@@ -40,7 +40,9 @@ function fieldErrorsOf(error: ZodError): Record<string, string> {
     if (!(field in fields)) fields[field] = message
   }
   for (const issue of error.issues) {
-    if (issue.code === 'unrecognized_keys') {
+    // Only an unknown key at the top of the body is a field of its own; one inside a field (an
+    // `altitude` in `area`) is that field's problem, and falls through to be keyed by it.
+    if (issue.code === 'unrecognized_keys' && issue.path.length === 0) {
       for (const key of issue.keys) name(key, 'is not a field this request accepts')
       continue
     }

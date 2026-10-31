@@ -439,6 +439,14 @@ describe('PATCH /v1/profiles/{userId} — updateProfile', () => {
     await givenAProfile()
     await expectContract('updateProfile', 422, await patch(NOK, { paceRange: { fastest: 10, slowest: 400 } }))
   })
+
+  it('422 keys an unknown key inside a field by that field, never by a field it happens to share a name with', async () => {
+    await givenAProfile()
+    const response = await patch(NOK, { area: { latitude: 13.8, longitude: 100.55, displayName: 'x' } })
+    const body = (await response.clone().json()) as { fieldErrors?: Record<string, string> }
+    await expectContract('updateProfile', 422, response)
+    expect(Object.keys(body.fieldErrors ?? {})).toEqual(['area'])
+  })
 })
 
 describe('DELETE /v1/profiles/{userId} — deleteProfile', () => {
