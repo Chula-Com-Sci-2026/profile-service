@@ -1,41 +1,21 @@
-# Profile, for the team's local-integration stack.
+# Profile for the team's local-integration stack: its own PostgreSQL, MinIO and bucket, its own
+# broker user, the migration and the service.
 #
-# It brings everything Profile needs that local-integration does not already have: its own
-# PostgreSQL (so it cannot collide with anyone else's tables), MinIO for photos and the bucket,
-# Profile's own broker user on the team's RabbitMQ, the one-shot migration, and the service,
-# built from a checkout of this repository. It runs on the project's default network.
-#
-# ── First, remove local-integration's own Profile service ─────────────────────────────────────
-# This service takes the place of the Python Profile, so delete that service from
-# local-integration's compose file (or comment it out) before bringing this one up. Left in, it
-# does not simply run beside this one:
-#   - If it is also called `profile-service`, compose merges the two into one service: this
-#     one inherits its depends_on, its published ports and its environment variables.
-#   - If it has another name and `service-name` below is set to that name, both containers
-#     answer to it, and requests split between them.
-#
-# Then copy this file next to local-integration's compose file and bring both up together:
-#
-#     docker compose -f <local-integration's compose file> -f compose.local-integration.yaml up --build
-#
-# ── Fill these in ─────────────────────────────────────────────────────────────────────────────
-# The values below are the ones this file cannot know. Each is set once, here, and used where it
-# is needed below.
+# 1. Remove local-integration's own Profile service. Left in, compose merges it into this one
+#    (same name) or both answer to the same name.
+# 2. Fill in the values below.
+# 3. Copy this file next to local-integration's compose file and run:
+#      docker compose -f <local-integration's compose file> -f compose.local-integration.yaml up --build
 #
 #   service-name           the name the gateway and Buddy Discovery dial for Profile
 #   port                   the port they dial it on
-#   broker-host            the RabbitMQ service in local-integration
-#   broker-admin-user,     a login that may create users on that broker, through its management
-#   broker-admin-password  API (port 15672) — used once, to create Profile's own user
-#   access-token-secret    Identity's ACCESS_TOKEN_SECRET, so its tokens verify here
-#   checkout               the path to a checkout of profile-service. Compose reads a relative path
-#                          against the project directory — the first compose file's, unless
-#                          --project-directory says otherwise — so an absolute path is the safe one
+#   broker-host            local-integration's RabbitMQ service
+#   broker-admin-user,     a login that can create users through the management API (port 15672),
+#   broker-admin-password  used once to create Profile's own user
+#   access-token-secret    Identity's ACCESS_TOKEN_SECRET
+#   checkout               an absolute path to a profile-service checkout
 #
-# One more has a default and is not set here: MinIO's port on the host, 9000 — MinIO's own —
-# unless PROFILE_PHOTO_PORT says otherwise. A photo's address names it, since the browser loads
-# photos from there, and compose cannot put a value from above into the middle of an address, so
-# it is a variable. Set it, in the shell or in local-integration's .env, only if 9000 is taken.
+# MinIO is published on 127.0.0.1:9000. Set PROFILE_PHOTO_PORT if 9000 is taken.
 x-profile:
   service-name: &service-name profile-service
   port: &port "3000"
@@ -46,7 +26,7 @@ x-profile:
   checkout: &checkout .
 
 services:
-  # Profile's own database: nothing else reads it, and the service waits on it.
+  # Profile's own database.
   profile-postgres:
     image: postgres:16-alpine
     environment:
@@ -59,10 +39,7 @@ services:
       timeout: 3s
       retries: 15
 
-  # Photos. The API is published on 127.0.0.1 only — local-integration keeps service ports off
-  # the network (ADR-0022) — because a photo's address is loaded by the browser, from the host.
-  # MinIO's default CORS answers any origin and allows PUT, which the presigned upload needs; an
-  # <img> needs no CORS at all.
+  # Photos. Published on 127.0.0.1 only, because the browser loads photos from the host.
   profile-minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: ["server", "/data"]
@@ -77,8 +54,7 @@ services:
       timeout: 3s
       retries: 20
 
-  # The bucket, readable by anyone object by object and never listable: a photo is a picture a
-  # runner chose to show, and its key carries a uuid, so its address cannot be guessed.
+  # The bucket: anyone can read a photo by its address, but no one can list them.
   profile-create-bucket:
     image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
@@ -105,11 +81,7 @@ services:
         mc mb --ignore-existing store/profile-service
         mc anonymous set-json /tmp/public-read.json store/profile-service
 
-  # Profile's own broker user, `profile`, with the least it needs: configure and write on
-  # `cra.events` only, read on nothing. Configure, because Profile declares the exchange itself on
-  # every connect; write, because it publishes there. It asks the broker's management API until it
-  # answers rather than waiting on the broker's service, whose name is one of the values above.
-  # `$$` because compose interpolates `$`.
+  # Profile's own broker user: configure and write on `cra.events` only. `$$` escapes `$`.
   profile-create-broker-user:
     image: rabbitmq:4.3.6-management
     restart: "no"
@@ -131,7 +103,7 @@ services:
         $$admin declare user --name profile --password profile --tags ''
         $$admin declare permissions --vhost / --username profile --configure '^cra\.events$$' --write '^cra\.events$$' --read '^$$'
 
-  # The same image as the service, run once: migrations never run on the service's boot.
+  # Runs the migrations once, before the service starts.
   profile-migrate:
     image: profile-service:local
     build:
@@ -143,9 +115,7 @@ services:
       profile-postgres:
         condition: service_healthy
 
-  # Profile. It waits on its database and its migration and on nothing else: MinIO down costs only
-  # photos, and RabbitMQ down costs only delivery — the events wait in the outbox until it is
-  # back. Its port stays internal; the gateway and Buddy Discovery reach it by name.
+  # Profile. Its port stays internal; the gateway and Buddy Discovery reach it by name.
   profile-service:
     image: profile-service:local
     build:
