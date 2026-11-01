@@ -16,6 +16,10 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
+# The sample runners, for compose.local-integration.yaml's profile-seed, which runs this stage.
+# The runtime stage never copies them.
+COPY scripts ./scripts
+
 # ---- runtime ----------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production

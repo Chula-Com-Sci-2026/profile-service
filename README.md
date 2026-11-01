@@ -198,7 +198,7 @@ Dependencies point inward only: `interface → application → domain ← infras
 | [docs/domain.md](docs/domain.md) | **authoritative.** What a profile is and the rules it obeys — start here |
 | [docs/openapi.yaml](docs/openapi.yaml) | the HTTP contract, derived from `domain.md`. Rendered at `/docs` |
 | [docs/profile-events.schema.json](docs/profile-events.schema.json) | the event contract: `ProfileUpdated` on RabbitMQ, in the team's JSON Schema format |
-| [compose.local-integration.yaml](compose.local-integration.yaml) | Profile for the team's local-integration stack: its own PostgreSQL and MinIO, its broker user, migrate and the service. Fill in the values named at its top |
+| [compose.local-integration.yaml](compose.local-integration.yaml) | Profile for the team's local-integration stack: its own PostgreSQL and MinIO, its broker user, migrate, the service and an optional seed. Fill in the values named at its top |
 | [docs/build_plan.md](docs/build_plan.md) | why it is built this way, and what is deliberately left undone |
 
 Tests hold the code to `openapi.yaml` and `profile-events.schema.json` on every run. Nothing enforces `domain.md` — and it still

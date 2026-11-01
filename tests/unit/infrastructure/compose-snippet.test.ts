@@ -10,6 +10,8 @@ import { parse } from 'yaml'
 type Service = {
   image?: string
   build?: unknown
+  profiles?: string[]
+  command?: string[]
   ports?: string[]
   depends_on?: Record<string, unknown>
   environment?: Record<string, string>
@@ -71,6 +73,22 @@ describe('compose.local-integration.yaml', () => {
       ['access-token-secret', 'broker-admin-password', 'broker-admin-user', 'broker-host', 'checkout', 'port', 'service-name'].sort(),
     )
     expect(snippetText.indexOf('x-profile:')).toBeLessThan(snippetText.indexOf('services:'))
+  })
+
+  it('seeds only when asked: profile-seed sits under a profile, so a plain `up` never empties the table', () => {
+    const seed = service('profile-seed')
+    expect(seed.profiles).toEqual(['seed'])
+    expect(seed.command).toEqual(['node', 'scripts/seed.ts'])
+    expect(seed.environment?.['DATABASE_URL']).toBe(service('profile-service').environment?.['DATABASE_URL'])
+  })
+
+  it('builds the seed from the build stage, the only stage that copies scripts/', () => {
+    expect(service('profile-seed').build).toMatchObject({ target: 'build' })
+    const dockerfile = readFileSync('Dockerfile', 'utf8')
+    const copied = dockerfile.indexOf('COPY scripts ./scripts')
+    expect(copied).toBeGreaterThan(dockerfile.indexOf('AS build'))
+    expect(copied).toBeLessThan(dockerfile.indexOf('AS runtime'))
+    expect(readFileSync('.dockerignore', 'utf8').split('\n')).not.toContain('scripts')
   })
 
   it('publishes no port of its PostgreSQL or of the service — local-integration keeps service ports internal', () => {

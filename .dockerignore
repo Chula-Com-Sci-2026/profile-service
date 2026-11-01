@@ -14,7 +14,6 @@ tests
 docs
 # …except the contract, which /docs and /openapi.yaml serve at runtime.
 !docs/openapi.yaml
-scripts
 coverage
 route.rest
 .claude

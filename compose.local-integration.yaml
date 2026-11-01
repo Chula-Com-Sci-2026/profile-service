@@ -1,5 +1,5 @@
 # Profile for the team's local-integration stack: its own PostgreSQL, MinIO and bucket, its own
-# broker user, the migration and the service.
+# broker user, the migration, the service and an optional seed.
 #
 # 1. Remove local-integration's own Profile service. Left in, compose merges it into this one
 #    (same name) or both answer to the same name. If other services list it under depends_on,
@@ -7,6 +7,9 @@
 # 2. Fill in the values below.
 # 3. Copy this file next to local-integration's compose file and run:
 #      docker compose -f <local-integration's compose file> -f compose.local-integration.yaml up --build
+# 4. Optional: load the sample runners (Ray, Mali and five more, without photos). It empties
+#    Profile first:
+#      docker compose -f <local-integration's compose file> -f compose.local-integration.yaml run --rm --build profile-seed
 #
 #   service-name           the name the gateway and Buddy Discovery dial for Profile
 #   port                   the port they dial it on
@@ -145,5 +148,24 @@ services:
     depends_on:
       profile-postgres:
         condition: service_healthy
+      profile-migrate:
+        condition: service_completed_successfully
+
+  # Step 4's seed, run only by name: it empties Profile's table first. Photos are skipped, because
+  # an upload link names 127.0.0.1, which inside a container is the container itself.
+  profile-seed:
+    profiles: [seed]
+    build:
+      context: *checkout
+      target: build
+    command: ["node", "scripts/seed.ts"]
+    environment:
+      DATABASE_URL: postgres://profile:profile@profile-postgres:5432/profile
+      OBJECT_STORAGE_ENDPOINT: http://profile-minio:9000
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:${PROFILE_PHOTO_PORT:-9000}
+      OBJECT_STORAGE_BUCKET: profile-service
+      OBJECT_STORAGE_ACCESS_KEY: minioadmin
+      OBJECT_STORAGE_SECRET_KEY: minioadmin
+    depends_on:
       profile-migrate:
         condition: service_completed_successfully
