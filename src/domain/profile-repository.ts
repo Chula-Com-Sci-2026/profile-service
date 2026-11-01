@@ -12,7 +12,8 @@ import type { Profile } from './profile.ts'
  * - `update` writes a change only over the revision it was made from, the one before its own, and
  *   throws ConcurrentChangeError when the stored revision is another or there is no row at all.
  *
- * `findAll` is every profile, ordered by id — for sending every profile's event again.
+ * `findAll` is every profile, ordered by id — for sending every profile's event again, and for the
+ * temporary search.
  *
  * An id that is not one (§4: a UUID in lowercase) matches nothing: `findById` answers null.
  */
