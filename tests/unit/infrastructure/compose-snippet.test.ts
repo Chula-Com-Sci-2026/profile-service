@@ -13,6 +13,7 @@ type Service = {
   profiles?: string[]
   command?: string[]
   ports?: string[]
+  volumes?: string[]
   depends_on?: Record<string, unknown>
   environment?: Record<string, string>
   entrypoint?: string[]
@@ -89,6 +90,12 @@ describe('compose.local-integration.yaml', () => {
     expect(copied).toBeGreaterThan(dockerfile.indexOf('AS build'))
     expect(copied).toBeLessThan(dockerfile.indexOf('AS runtime'))
     expect(readFileSync('.dockerignore', 'utf8').split('\n')).not.toContain('scripts')
+  })
+
+  it('keeps Profile’s data across `down`, in named volumes, as the team’s other services do', () => {
+    expect(service('profile-postgres').volumes).toEqual(['profile-postgres-data:/var/lib/postgresql/data'])
+    expect(service('profile-minio').volumes).toEqual(['profile-minio-data:/data'])
+    expect(Object.keys(snippet['volumes'] as object).sort()).toEqual(['profile-minio-data', 'profile-postgres-data'])
   })
 
   it('publishes no port of its PostgreSQL or of the service — local-integration keeps service ports internal', () => {

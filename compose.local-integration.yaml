@@ -38,6 +38,8 @@ services:
       POSTGRES_USER: profile
       POSTGRES_PASSWORD: profile
       POSTGRES_DB: profile
+    volumes:
+      - profile-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U profile -d profile"]
       interval: 2s
@@ -53,6 +55,8 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
       - "127.0.0.1:${PROFILE_PHOTO_PORT:-9000}:9000"
+    volumes:
+      - profile-minio-data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 2s
@@ -170,3 +174,8 @@ services:
     depends_on:
       profile-migrate:
         condition: service_completed_successfully
+
+# Profile's data survives `down`; `down -v` removes it.
+volumes:
+  profile-postgres-data:
+  profile-minio-data:
