@@ -5,11 +5,12 @@
 #    (same name) or both answer to the same name. If other services list it under depends_on,
 #    change those entries to profile-service.
 # 2. Fill in the values below.
-# 3. Copy this file next to local-integration's compose file and run:
-#      docker compose -f <local-integration's compose file> -f compose.local-integration.yaml up --build
+# 3. Copy this file next to local-integration's compose file. Run with every -f file you already
+#    use (compose.override.yaml too, if you have one) and this one last, for example:
+#      docker compose -f compose.yaml -f compose.team-identity.yaml -f compose.local-integration.yaml up --build
 # 4. Optional: load the sample runners (Ray, Mali and five more, without photos). It empties
-#    Profile first:
-#      docker compose -f <local-integration's compose file> -f compose.local-integration.yaml run --rm --build profile-seed
+#    Profile first. Use the same -f files:
+#      docker compose -f compose.yaml -f compose.team-identity.yaml -f compose.local-integration.yaml run --rm --build profile-seed
 #
 #   service-name           the name the gateway and Buddy Discovery dial for Profile
 #   port                   the port they dial it on
