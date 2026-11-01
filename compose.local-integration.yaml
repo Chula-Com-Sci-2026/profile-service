@@ -2,7 +2,8 @@
 # broker user, the migration and the service.
 #
 # 1. Remove local-integration's own Profile service. Left in, compose merges it into this one
-#    (same name) or both answer to the same name.
+#    (same name) or both answer to the same name. If other services list it under depends_on,
+#    change those entries to profile-service.
 # 2. Fill in the values below.
 # 3. Copy this file next to local-integration's compose file and run:
 #      docker compose -f <local-integration's compose file> -f compose.local-integration.yaml up --build
