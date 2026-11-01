@@ -8,7 +8,7 @@
     "area": "Lumphini area",
     "latitude": 13.7308,
     "longitude": 100.5418,
-    "availability": "Tue & Thu evenings"
+    "availability": "Tue & Thu · 18:30"
   },
   {
     "id": "22222222-2222-4222-8222-222222222222",
@@ -31,7 +31,7 @@
     "area": "Benjakitti Park",
     "latitude": 13.729,
     "longitude": 100.559,
-    "availability": "Sat early mornings"
+    "availability": "Sat · 06:00"
   },
   {
     "id": "44444444-4444-4444-8444-444444444444",
@@ -43,7 +43,7 @@
     "area": "Lumphini Park",
     "latitude": 13.7314,
     "longitude": 100.5414,
-    "availability": "Tue & Thu early mornings, Sat mornings",
+    "availability": "Tue & Thu · 06:00, Sat · 07:00",
     "usualDistance": "5–10 km",
     "gear": [
       "Nike Pegasus 41",
@@ -59,7 +59,7 @@
     "area": "Benjakitti Park",
     "latitude": 13.729,
     "longitude": 100.559,
-    "availability": "Sun early mornings",
+    "availability": "Sun · 06:00",
     "usualDistance": "Over 10 km",
     "gear": [
       "Nike Vaporfly 3",
@@ -75,7 +75,7 @@
     "area": "Chatuchak Park",
     "latitude": 13.803,
     "longitude": 100.553,
-    "availability": "Mon & Wed evenings",
+    "availability": "Mon & Wed · 19:00",
     "usualDistance": "5–10 km",
     "gear": [
       "ASICS Gel-Contend 9"
@@ -91,7 +91,7 @@
     "area": "Lumphini Park",
     "latitude": 13.7314,
     "longitude": 100.5414,
-    "availability": "Tue & Fri nights",
+    "availability": "Tue & Fri · 20:30",
     "usualDistance": "Over 10 km"
   }
 ]
