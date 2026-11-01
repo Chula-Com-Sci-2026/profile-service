@@ -13,6 +13,7 @@ import { getPublicProfile } from '../../src/application/get-public-profile.ts'
 import type { PhotoStorage } from '../../src/application/ports/photo-storage.ts'
 import { removePhoto } from '../../src/application/remove-photo.ts'
 import { saveProfile } from '../../src/application/save-profile.ts'
+import { searchRunners } from '../../src/application/search-runners.ts'
 import { setFieldVisibility } from '../../src/application/set-field-visibility.ts'
 import { DrizzleProfileRepository } from '../../src/infrastructure/drizzle-profile-repository.ts'
 import { drizzleUnitOfWork } from '../../src/infrastructure/drizzle-unit-of-work.ts'
@@ -78,6 +79,7 @@ function everyUseCase(answer: () => Promise<never>): UseCases {
     createPhotoUpload: answer,
     attachPhoto: answer,
     removePhoto: answer,
+    searchRunners: answer,
   }
 }
 
@@ -108,6 +110,7 @@ beforeAll(async () => {
       createPhotoUpload: createPhotoUpload(repository, currentStorage),
       attachPhoto: attachPhoto(repository, unitOfWork, currentStorage, onOrphan),
       removePhoto: removePhoto(unitOfWork, currentStorage, onOrphan),
+      searchRunners: searchRunners(repository),
     },
     logger: pino({ level: 'silent' }),
     authentication: identity.settings,
@@ -410,6 +413,137 @@ describe('GET /api/v1/runners/{id} — getPublicProfile', () => {
 
   it('401 without a token', async () => {
     await expectContract('getPublicProfile', 401, await app.request(runner(NOK)))
+  })
+})
+
+describe('GET /api/v1/runners — searchRunners, temporary', () => {
+  // NOK, the caller, is `minimal`: cell (13.73, 100.54). The others, by their distance from it:
+  const MALI = '22222222-2222-4222-8222-222222222222' // cell (13.73, 100.56): 2.2 km
+  const BANK = '66666666-6666-4666-8666-666666666666' // cell (13.80, 100.55): 7.9 km
+  const FAR = '88888888-8888-4888-8888-888888888888' // cell (13.83, 100.54): 11.1 km
+  const RUNNERS = '/api/v1/runners'
+
+  /** BEAM shares the caller's cell; its exact point is not the caller's. */
+  async function givenRunners(): Promise<void> {
+    await givenAProfile(NOK)
+    await givenAProfile(BEAM, { ...minimal, name: 'Beam', latitude: 13.7349, longitude: 100.5449 })
+    await givenAProfile(MALI, { ...minimal, name: 'Mali', latitude: 13.729, longitude: 100.559 })
+    await givenAProfile(BANK, { ...minimal, name: 'Bank', latitude: 13.803, longitude: 100.553 })
+    await givenAProfile(FAR, { ...minimal, name: 'Far', latitude: 13.83, longitude: 100.54 })
+  }
+
+  const found = async (response: Response): Promise<[unknown, unknown][]> =>
+    ((await response.clone().json()) as Record<string, unknown>[]).map((item) => [item['id'], item['distanceKm']])
+
+  it('200 answers a bare array of other runners’ cards plus distanceKm, nearest first — never the caller, never a point', async () => {
+    await givenRunners()
+    const response = await as(NOK, RUNNERS)
+    const body = (await response.clone().json()) as Record<string, unknown>[]
+    const answer = await found(response)
+    await expectContract('searchRunners', 200, response)
+
+    expect(answer).toEqual([
+      [BEAM, 0],
+      [MALI, 2.2],
+      [BANK, 7.9],
+    ])
+    for (const item of body) {
+      for (const key of ['latitude', 'longitude', 'hiddenFields', 'revision']) expect(key in item, key).toBe(false)
+    }
+    expect(body[0]).toMatchObject({ name: 'Beam', areaCell: minimalCell, photoUrl: null })
+    expect(JSON.stringify(body)).not.toContain('13.7349')
+    expect(JSON.stringify(body)).not.toContain('100.5449')
+  })
+
+  it('200 for the frontend’s own query — radius 5, every other filter off, verifiedOnly ignored', async () => {
+    await givenRunners()
+    const response = await as(NOK, `${RUNNERS}?radiusKm=5&pace=Any&experience=All&verifiedOnly=false`)
+    const answer = await found(response)
+    await expectContract('searchRunners', 200, response)
+    expect(answer).toEqual([
+      [BEAM, 0],
+      [MALI, 2.2],
+    ])
+  })
+
+  it('200 for Discovery’s unset filters — radiusKm=0 and empty text mean the defaults', async () => {
+    await givenRunners()
+    const response = await as(NOK, `${RUNNERS}?radiusKm=0&experience=&pace=&availability=`)
+    const answer = await found(response)
+    await expectContract('searchRunners', 200, response)
+    expect(answer).toEqual([
+      [BEAM, 0],
+      [MALI, 2.2],
+      [BANK, 7.9],
+    ])
+  })
+
+  it('200 leaves out a runner whose hidden field an active filter asks about, and keeps them when it is off', async () => {
+    await givenRunners()
+    const hidden = await as(MALI, `${ME}/visibility`, { method: 'PUT', body: JSON.stringify({ hiddenFields: ['experience'] }) })
+    expect(hidden.status).toBe(200)
+
+    const filtered = await as(NOK, `${RUNNERS}?experience=Beginner`)
+    const kept = await found(filtered)
+    await expectContract('searchRunners', 200, filtered)
+    expect(kept.map(([id]) => id)).toEqual([BEAM, BANK])
+
+    const unfiltered = await as(NOK, `${RUNNERS}?experience=All`)
+    const body = (await unfiltered.clone().json()) as Record<string, unknown>[]
+    await expectContract('searchRunners', 200, unfiltered)
+    expect(body.find((item) => item['id'] === MALI)).toMatchObject({ experience: null })
+  })
+
+  it('200 filters on pace overlap with the caller’s saved range and on availability text', async () => {
+    await givenAProfile(NOK) // pace 7–8, "Sat early mornings"
+    await givenAProfile(BEAM, { ...minimal, paceMin: 8, paceMax: 9 }) // touches the caller's slower end
+    await givenAProfile(MALI, { ...minimal, paceMin: 5, paceMax: 6, availability: 'Mon & Wed evenings' })
+
+    const byPace = await as(NOK, `${RUNNERS}?pace=6:00%E2%80%936:30`)
+    const keptByPace = await found(byPace)
+    await expectContract('searchRunners', 200, byPace)
+    expect(keptByPace.map(([id]) => id)).toEqual([BEAM])
+
+    const byAvailability = await as(NOK, `${RUNNERS}?availability=%20SAT%20`)
+    const keptByAvailability = await found(byAvailability)
+    await expectContract('searchRunners', 200, byAvailability)
+    expect(keptByAvailability.map(([id]) => id)).toEqual([BEAM])
+  })
+
+  it('200 with [] when nobody else is near', async () => {
+    await givenAProfile(NOK)
+    await givenAProfile(FAR, { ...minimal, latitude: 13.83, longitude: 100.54 })
+    const response = await as(NOK, RUNNERS)
+    const answer = await found(response)
+    await expectContract('searchRunners', 200, response)
+    expect(answer).toEqual([])
+  })
+
+  it('404 when the caller has no profile', async () => {
+    await givenAProfile(BEAM)
+    const response = await as(NOK, RUNNERS)
+    const body = await bodyOf(response)
+    await expectContract('searchRunners', 404, response)
+    expect(body['code']).toBe('profile_not_found')
+  })
+
+  it.each([
+    ['radiusKm=abc', 'radiusKm'],
+    ['radiusKm=Infinity', 'radiusKm'],
+    ['experience=Expert', 'experience'],
+    ['experience=advanced', 'experience'],
+  ] as const)('422 for ?%s, naming %s', async (query, field) => {
+    await givenAProfile(NOK)
+    const response = await as(NOK, `${RUNNERS}?${query}`)
+    const body = (await bodyOf(response)) as { code?: string; message?: string; fieldErrors?: Record<string, string> }
+    await expectContract('searchRunners', 422, response)
+    expect(body.code).toBe('validation_failed')
+    expect(Object.keys(body.fieldErrors ?? {})).toEqual([field])
+    expect(body.message).not.toContain('body')
+  })
+
+  it('401 without a token', async () => {
+    await expectContract('searchRunners', 401, await app.request(RUNNERS))
   })
 })
 
@@ -807,6 +941,7 @@ describe('an unexpected failure', () => {
     ['createPhotoUpload', 'POST', `${ME}/photo-uploads`, undefined],
     ['attachPhoto', 'PUT', `${ME}/photo`, JSON.stringify({ photoRef: `photos/${NOK}/abc` })],
     ['removePhoto', 'DELETE', `${ME}/photo`, undefined],
+    ['searchRunners', 'GET', '/api/v1/runners', undefined],
   ] as const)('%s becomes a 500 matching the default response', async (operationId, method, path, body) => {
     const token = await identity.tokenFor(NOK)
     const response = await brokenApp().request(path, {

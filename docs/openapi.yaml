@@ -173,6 +173,92 @@ paths:
         '404': { $ref: '#/components/responses/ProfileNotFound' }   # you have not saved one yet
         default: { $ref: '#/components/responses/InternalError' }
 
+  /api/v1/runners:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+
+    get:
+      operationId: searchRunners
+      summary: Search other runners' cards — temporary
+      description: |-
+        Temporary: Buddy Discovery's search calls this until its own, over the cards it keeps from
+        `ProfileUpdated`, is live; then it goes. The caller is the runner searching, needs a profile
+        of their own, and is left out of the answer.
+
+        Every other runner's public card, plus `distanceKm`: the great-circle distance from the
+        caller's area cell to theirs — never between exact points — in kilometres, to one decimal.
+        A runner is kept when `distanceKm` is at most `radiusKm`. The filters read the card, so a
+        hidden field is `null`: it fails a filter on that field, and passes when that filter is
+        off. Nearest first, then by `id`; no paging.
+
+        An unset filter may arrive as `0` or `""`, and means the same as one left out. Any other
+        parameter, such as `verifiedOnly`, is ignored.
+      parameters:
+        - name: radiusKm
+          in: query
+          required: false
+          description: >-
+            Kilometres. Left out, empty, 0 or negative means 10; anything that is not a number
+            answers 422.
+          schema: { type: number, default: 10 }
+        - name: experience
+          in: query
+          required: false
+          description: >-
+            Keeps runners at this level, in exactly this case. `All`, or empty, keeps every level;
+            anything else answers 422.
+          schema: { type: string, enum: [All, Beginner, Intermediate, Advanced, ''], default: All }
+        - name: pace
+          in: query
+          required: false
+          description: >-
+            Empty or `Any` keeps every pace. Any other value keeps the runners whose pace range
+            overlaps the caller's own saved one, ends included; the value itself is not read.
+          schema: { type: string, default: '' }
+        - name: availability
+          in: query
+          required: false
+          description: >-
+            Keeps the runners whose `availability` contains this text, trimmed, ignoring case.
+            Empty, or blank, keeps everyone.
+          schema: { type: string, default: '' }
+      responses:
+        '200':
+          description: The runners found, nearest first — possibly none
+          headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  description: A public card — exactly `PublicCard` — plus `distanceKm`.
+                  additionalProperties: false
+                  required: [id, name, area, areaCell, photoUrl, bio, paceMin, paceMax, experience, availability, usualDistance, gear, distanceKm]
+                  properties:
+                    id:            { $ref: '#/components/schemas/Id' }
+                    name:          { $ref: '#/components/schemas/Name' }
+                    area:          { $ref: '#/components/schemas/Area' }
+                    areaCell:      { $ref: '#/components/schemas/AreaCell' }
+                    photoUrl:      { anyOf: [{ $ref: '#/components/schemas/PhotoUrl' }, { type: 'null' }] }
+                    bio:           { anyOf: [{ $ref: '#/components/schemas/Bio' }, { type: 'null' }] }
+                    paceMin:       { anyOf: [{ $ref: '#/components/schemas/Pace' }, { type: 'null' }] }
+                    paceMax:       { anyOf: [{ $ref: '#/components/schemas/Pace' }, { type: 'null' }] }
+                    experience:    { anyOf: [{ $ref: '#/components/schemas/Experience' }, { type: 'null' }] }
+                    availability:  { anyOf: [{ $ref: '#/components/schemas/Availability' }, { type: 'null' }] }
+                    usualDistance: { anyOf: [{ $ref: '#/components/schemas/UsualDistance' }, { type: 'null' }] }
+                    gear:          { anyOf: [{ $ref: '#/components/schemas/Gear', minItems: 1 }, { type: 'null' }] }
+                    distanceKm:
+                      type: number
+                      minimum: 0
+                      description: >-
+                        Kilometres from the caller's area cell to this runner's, to one decimal.
+                        Approximate by up to about a cell's half-diagonal at each end, on purpose.
+        '401': { $ref: '#/components/responses/Unauthorized' }   # no token, or it does not verify
+        '404': { $ref: '#/components/responses/ProfileNotFound' }   # you have not saved a profile yet
+        '422': { $ref: '#/components/responses/ValidationFailed' }   # radiusKm is not a number, or experience is none of the values above
+        default: { $ref: '#/components/responses/InternalError' }
+
   /api/v1/runners/{id}:
     parameters:
       - name: id
@@ -339,7 +425,7 @@ components:
             properties: { code: { const: profile_not_found }, fieldErrors: false }
 
     ValidationFailed:
-      description: The body is malformed, has the wrong shape or misses a required field, or a value breaks a rule in domain.md §4
+      description: The request is malformed, has the wrong shape or misses a required field, or a value breaks a rule in domain.md §4
       headers: { X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' } }
       content:
         application/json:
@@ -594,6 +680,6 @@ components:
           additionalProperties: { type: string }
           description: >-
             On a 422, when a field can be named: one message per field, keyed by its name in the
-            request body. A problem inside a field is keyed by the field itself (`gear`, not
+            request. A problem inside a field is keyed by the field itself (`gear`, not
             `gear[3]`). Every malformed field is named at once; of the rules in domain.md §4,
             the first one broken.

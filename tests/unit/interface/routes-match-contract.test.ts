@@ -29,6 +29,7 @@ const app = createApp({
     createPhotoUpload: rejects,
     attachPhoto: rejects,
     removePhoto: rejects,
+    searchRunners: rejects,
   },
   logger: pino({ level: 'silent' }),
   authentication: { secret: 'secret', issuer: 'issuer', audience: 'audience' },

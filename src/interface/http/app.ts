@@ -6,6 +6,7 @@ import type { GetProfile } from '../../application/get-profile.ts'
 import type { GetPublicProfile } from '../../application/get-public-profile.ts'
 import type { RemovePhoto } from '../../application/remove-photo.ts'
 import type { SaveProfile } from '../../application/save-profile.ts'
+import type { SearchRunners } from '../../application/search-runners.ts'
 import type { SetFieldVisibility } from '../../application/set-field-visibility.ts'
 import { authentication, type AuthenticationOptions } from './authentication.ts'
 import type { Env } from './context.ts'
@@ -15,6 +16,7 @@ import { MalformedBodyError } from './errors.ts'
 import { toContent, toHiddenFields } from './profile-input.ts'
 import { cardView, ownerView, type PhotoUrl } from './profile-view.ts'
 import { requestContext } from './request-context.ts'
+import { runnerSearchQuery, searchResultView, toRunnerSearch } from './runner-search.ts'
 import { photoAttachment, profileSave, visibility } from './validators.ts'
 
 export type UseCases = {
@@ -25,6 +27,7 @@ export type UseCases = {
   createPhotoUpload: CreatePhotoUpload
   attachPhoto: AttachPhoto
   removePhoto: RemovePhoto
+  searchRunners: SearchRunners
 }
 
 /**
@@ -127,6 +130,14 @@ export function createApp({ useCases, logger, authentication: auth, readiness, p
 
   app.delete(`${ME}/photo`, async (c) => {
     return c.json(ownerView(await useCases.removePhoto(c.get('caller').id), photoUrl))
+  })
+
+  // Temporary: Buddy Discovery's search, until its own is live (domain.md §3 searchRunners()).
+  // Every other runner's card plus distanceKm, as a bare array — the frontend expects Runner[].
+  app.get('/api/v1/runners', async (c) => {
+    const search = toRunnerSearch(runnerSearchQuery.parse(c.req.query()))
+    const found = await useCases.searchRunners(c.get('caller').id, search)
+    return c.json(found.map((result) => searchResultView(result, photoUrl)))
   })
 
   // The card, to anyone — its owner included, so a runner sees exactly what others see. Ids are

@@ -27,9 +27,9 @@ type Failure = {
 }
 
 /**
- * One message per field, keyed by its name in the request body — a problem inside a field is
- * keyed by the field itself (`gear`, not `gear[3]`). Every malformed field at once, the first
- * message for each. A body that is not an object names none. Unknown fields are stripped, not
+ * One message per field, keyed by its name in the request — a body's field or a query parameter.
+ * A problem inside a field is keyed by the field itself (`gear`, not `gear[3]`). Every malformed
+ * field at once, the first message for each. A body that is not an object names none. Unknown fields are stripped, not
  * refused, so they never get here.
  */
 function fieldErrorsOf(error: ZodError): Record<string, string> {
@@ -50,7 +50,7 @@ function fieldErrorsOf(error: ZodError): Record<string, string> {
  */
 function failureFor(error: Error): Failure | undefined {
   if (error instanceof ZodError) {
-    return { status: 422, code: 'validation_failed', message: 'the request body is not valid', fieldErrors: fieldErrorsOf(error) }
+    return { status: 422, code: 'validation_failed', message: 'the request is not valid', fieldErrors: fieldErrorsOf(error) }
   }
   if (error instanceof MalformedBodyError) {
     return { status: 422, code: 'validation_failed', message: error.message }

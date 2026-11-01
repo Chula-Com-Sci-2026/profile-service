@@ -8,6 +8,7 @@ import { getProfile } from './application/get-profile.ts'
 import { getPublicProfile } from './application/get-public-profile.ts'
 import { removePhoto } from './application/remove-photo.ts'
 import { saveProfile } from './application/save-profile.ts'
+import { searchRunners } from './application/search-runners.ts'
 import { setFieldVisibility } from './application/set-field-visibility.ts'
 import { loadConfig } from './infrastructure/config.ts'
 import { createDatabase } from './infrastructure/database.ts'
@@ -94,6 +95,7 @@ const app = createApp({
     createPhotoUpload: createPhotoUpload(repository, photos),
     attachPhoto: attachPhoto(repository, unitOfWork, photos, onOrphan),
     removePhoto: removePhoto(unitOfWork, photos, onOrphan),
+    searchRunners: searchRunners(repository),
   },
   logger,
   authentication: config.accessToken,

@@ -55,6 +55,7 @@ Ray's profile is there once `npm run db:seed` has run (see Local development).
 | `PUT` | `/api/v1/me/profile/photo` | attach the uploaded photo |
 | `DELETE` | `/api/v1/me/profile/photo` | remove the photo |
 | `GET` | `/api/v1/runners/{id}` | a runner's public card, yours included |
+| `GET` | `/api/v1/runners` | runners near you — temporary, until Buddy Discovery searches its own copy |
 | `GET` | `/up` | is the process alive? |
 | `GET` | `/ready` | should traffic come here? |
 | `GET` | `/docs` | this API, rendered |
@@ -64,8 +65,9 @@ Everything under `/api/v1` needs a bearer token from Identity. “me” is the t
 runner changes only their own profile; anyone's public card can be read. Nothing outside
 `/api/v1` needs a token.
 
-Profiles cannot be listed or searched — deliberately: Buddy Discovery keeps its own copy of what
-this service publishes, as [docs/domain.md](docs/domain.md) §1 explains.
+`GET /api/v1/runners` is temporary: Buddy Discovery searches through it until its own search, over
+the copy it keeps of what this service publishes, is live — see [docs/domain.md](docs/domain.md)
+§1. Distances run between area cells, never exact points.
 
 Statuses and request and response shapes are in the contract: open `/docs`, or read
 [docs/openapi.yaml](docs/openapi.yaml).
