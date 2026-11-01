@@ -31,6 +31,11 @@
 #   checkout               the path to a checkout of profile-service. Compose reads a relative path
 #                          against the project directory — the first compose file's, unless
 #                          --project-directory says otherwise — so an absolute path is the safe one
+#
+# One more has a default and is not set here: MinIO's port on the host, 9000 — MinIO's own —
+# unless PROFILE_PHOTO_PORT says otherwise. A photo's address names it, since the browser loads
+# photos from there, and compose cannot put a value from above into the middle of an address, so
+# it is a variable. Set it, in the shell or in local-integration's .env, only if 9000 is taken.
 x-profile:
   service-name: &service-name profile-service
   port: &port "3000"
@@ -65,7 +70,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:${PROFILE_PHOTO_PORT:-9000}:9000"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 2s
@@ -156,7 +161,7 @@ services:
       SHUTDOWN_DRAIN_MS: "3000"
       OBJECT_STORAGE_ENDPOINT: http://profile-minio:9000
       # Never `localhost`, which a browser may try as IPv6 first: MinIO listens on 127.0.0.1 only.
-      OBJECT_STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:${PROFILE_PHOTO_PORT:-9000}
       OBJECT_STORAGE_BUCKET: profile-service
       OBJECT_STORAGE_ACCESS_KEY: minioadmin
       OBJECT_STORAGE_SECRET_KEY: minioadmin

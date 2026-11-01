@@ -44,11 +44,11 @@ describe('compose.local-integration.yaml', () => {
     })
   })
 
-  it('publishes MinIO’s API on 127.0.0.1 only, and points OBJECT_STORAGE_PUBLIC_ENDPOINT there', () => {
-    const ports = service('profile-minio').ports ?? []
-    expect(ports.length).toBeGreaterThan(0)
-    for (const port of ports) expect(port).toMatch(/^127\.0\.0\.1:/)
-    expect(service('profile-service').environment?.['OBJECT_STORAGE_PUBLIC_ENDPOINT']).toBe('http://127.0.0.1:9000')
+  it('publishes MinIO’s API on 127.0.0.1 only, on one port — PROFILE_PHOTO_PORT, 9000 unless set — that OBJECT_STORAGE_PUBLIC_ENDPOINT names too', () => {
+    const photoPort = '${PROFILE_PHOTO_PORT:-9000}'
+    expect(service('profile-minio').ports).toEqual([`127.0.0.1:${photoPort}:9000`])
+    expect(service('profile-service').environment?.['OBJECT_STORAGE_PUBLIC_ENDPOINT']).toBe(`http://127.0.0.1:${photoPort}`)
+    expect(snippetText.indexOf('PROFILE_PHOTO_PORT')).toBeLessThan(snippetText.indexOf('services:'))
   })
 
   it('gives the broker user configure and write on ^cra\\.events$ and read on nothing', () => {
