@@ -515,8 +515,8 @@ components:
         The name of the place a runner usually runs, such as "Lumphini area". Shown to everyone.
         1–100 characters after trimming.
 
-    Latitude:  { type: number, minimum: -90,  maximum: 90,  description: Degrees, WGS 84. }
-    Longitude: { type: number, minimum: -180, maximum: 180, description: Degrees, WGS 84. }
+    Latitude:  { type: number, minimum: -90,  maximum: 90,  description: 'Degrees, WGS 84.' }
+    Longitude: { type: number, minimum: -180, maximum: 180, description: 'Degrees, WGS 84.' }
 
     Availability:
       type: string
