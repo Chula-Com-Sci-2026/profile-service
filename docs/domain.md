@@ -29,7 +29,7 @@
 
 Identity is upstream. We are **conformist**: a profile's `id` is Identity's id for its runner — a UUID, the subject of the runner's access token — taken as given and never made here. Identity may delete a runner; nothing tells us, so a profile can outlive the runner it describes. **Not handled yet.**
 
-Buddy Discovery is downstream, and we are its **supplier**: it builds its own copy of how each runner appears to other runners from **ProfileUpdated**, which goes out on RabbitMQ after every change to a profile. It carries the runner's **public card** — visibility already applied, a hidden field as `null`, the point only as its area cell — and the profile's **revision**, so a copy can tell a newer card from an older one that arrived late. A field the runner hid is hidden from matching too: nothing hidden leaves this service. When Buddy Discovery's copy has to be rebuilt, every profile's card can be sent again, each under the revision it already has.
+Buddy Discovery is downstream, and we are its **supplier**: it builds its own copy of how each runner appears to other runners from **ProfileUpdated**, which goes out on RabbitMQ after every change to a profile. It carries the runner's **public card** — visibility already applied, a hidden field as `null`, the point only as its area cell — and the profile's **revision**, so a copy can tell a newer card from an older one that arrived late. A field the runner hid is hidden from matching too: nothing hidden leaves this service. When Buddy Discovery's copy has to be rebuilt, every profile's card can be sent again, each under the revision it already has. Until its own search is live, Buddy Discovery searches through this service instead, with **searchRunners()** (§3). That operation is temporary: it goes once Buddy Discovery searches its own copy.
 
 ## 2. Ubiquitous language
 
@@ -93,10 +93,11 @@ The team's operations, and one of this service's own, one application file each:
 - **removePhoto()** — takes the photo off the profile.
 - **getProfile()** — the whole profile, for its owner.
 - **getPublicProfile()** — the public card, for anyone, its owner included.
+- **searchRunners()** — *temporary, until Buddy Discovery's own search is live (§1).* Every other runner's public card, each with how far away it is: the great-circle distance between the searcher's area cell and theirs — never between exact points — in kilometres, to one decimal. It keeps the runners within a radius, 10 km unless one is given, nearest first and, at the same distance, by `id`. It can also keep only one `experience`; only runners whose pace range overlaps the searcher's own saved one, ends included; and only those whose `availability` contains some text, ignoring case. The filters read the public card, so a hidden field is `null`: it fails a filter on that field, and passes when that filter is off. The searcher needs a profile of their own.
 - **republishProfiles()** — sends every profile's ProfileUpdated again, each under the revision it already has, for a copy that has to be rebuilt (§1). It changes nothing, so no revision moves.
 - **publicCard()** — on the aggregate itself: the profile as other runners see it (§4). The one place field visibility is applied.
 
-Every operation that changes a profile raises its revision by one and publishes ProfileUpdated (§1) — even one that leaves every field as it was. `id` never changes. There is no way to list or search profiles, and none to delete one.
+Every operation that changes a profile raises its revision by one and publishes ProfileUpdated (§1) — even one that leaves every field as it was. `id` never changes. There is no way to delete a profile.
 
 ## 4. Fields and their rules
 

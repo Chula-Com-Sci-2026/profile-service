@@ -10,7 +10,7 @@ A demonstration of microservices + DDD, so architectural clarity outranks clever
 | `docs/domain.md` | **authoritative.** What a profile is and the rules it obeys. If code disagrees, the code is the bug |
 | `docs/openapi.yaml` | the HTTP contract, derived from the spec. Tests check the code against it. The service renders it at `/docs` and serves the file at `/openapi.yaml` |
 | `docs/profile-events.schema.json` | the event contract: `ProfileUpdated` on RabbitMQ, in the team's JSON Schema format, standing alone. Tests check real events against it |
-| `docs/build_plan.md` | **Decisions taken** (18) and **Deferred on purpose** (3). Settled — do not re-litigate or report as findings |
+| `docs/build_plan.md` | **Decisions taken** (19) and **Deferred on purpose** (3). Settled — do not re-litigate or report as findings |
 | `README.md` | how a human runs it |
 
 ## Commands
