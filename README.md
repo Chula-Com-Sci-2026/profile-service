@@ -13,10 +13,11 @@ that, and a profile's `id` is the runner's Identity id, taken as given.
 ## Quick start
 
 ```bash
-docker compose up
+docker compose up --build
 ```
 
-The service listens on **http://localhost:3000**.
+`--build` makes the image from your checkout, not the last one built. The service listens on
+**http://localhost:3000**.
 
 **Open http://localhost:3000/docs** — the whole API, rendered. The service serves that page
 itself, so it always matches the version running.
@@ -42,7 +43,8 @@ console.log(await new SignJWT({}).setProtectedHeader({ alg: 'HS256' })
 curl -H "Authorization: Bearer $TOKEN" localhost:3000/api/v1/me/profile
 ```
 
-Ray's profile is there once `npm run db:seed` has run (see Local development).
+Ray's profile is there once `cp .env.example .env && npm run db:seed` has run (see Local
+development).
 
 ## API
 
@@ -81,8 +83,8 @@ The image goes straight to object storage; this service hands out the link and r
 3. `PUT /api/v1/me/profile/photo` with `{"photoRef": "…"}` attaches it. The profile's `photoUrl`
    then loads in an `<img>`, with no token.
 
-If object storage is down, steps 1 and 3 answer **503** `storage_unavailable`. Nothing else asks
-storage, so saving and reading profiles carry on.
+If object storage is down, steps 1 and 3 answer **503** `storage_unavailable`. Removing a photo
+never answers 503, and nothing else touches storage, so saving and reading profiles carry on.
 
 ## Events
 
@@ -96,9 +98,9 @@ The event carries the runner's public card and the profile's `revision`; its con
 default, every event still goes to the outbox and waits there. A save never waits on the broker:
 with RabbitMQ down, saves carry on and the events go out, in order, once it is back.
 
-Nothing here consumes the events, so they wait — unroutable — until a queue is bound to
-`cra.events`; Buddy Discovery's consumer binds one. To watch them by hand, bind a queue of your
-own and read from it (RabbitMQ 4 wants it durable):
+Nothing here consumes the events, so until a queue is bound for `ProfileUpdated` they wait in the
+outbox. To watch them by hand, bind a durable queue of your own and read from it (RabbitMQ 4
+refuses one that is neither durable nor exclusive):
 
 ```bash
 docker compose exec rabbitmq sh -c '
@@ -113,9 +115,8 @@ The management UI is at **http://localhost:15672** (`admin` / `admin`).
 
 **Sending every profile again.** `npm run events:republish` writes every profile's current
 `ProfileUpdated` to the outbox, each under the revision it already has, and the running service
-sends them. Run it on purpose: when Buddy Discovery's consumer goes live, after its copy is wiped,
-after a bug in it. In a container it is `docker compose exec profile-service node
-dist/republish-events.js`.
+sends them. Run it on purpose, when a consumer's copy must be built or rebuilt. In a container it
+is `docker compose exec profile-service node dist/republish-events.js`.
 
 **Revisions restart at 1 after `npm run db:reset` or `npm run db:seed`** — the seed empties the
 table and saves every runner afresh — and a consumer ignores a revision lower than the one it holds.
@@ -123,7 +124,7 @@ So reset Buddy Discovery's copy together with this database, or it keeps the old
 
 ## Local development
 
-The service runs from source; PostgreSQL and MinIO stay in Docker.
+The service runs from source; PostgreSQL, MinIO and RabbitMQ stay in Docker.
 
 ```bash
 docker compose stop profile-service               # port 3000 has one owner — see below
@@ -138,21 +139,18 @@ npm run dev                                       # restarts on save, readable l
 Run that once; after it, `npm run dev` is the whole loop.
 
 If a pull brings a migration that adds a required column, it cannot apply to rows already
-there: `npm run db:migrate` fails, or under `docker compose up` the `migrate` container exits and
-`profile-service` never starts. Throw the database away — it is disposable — with
+there: `npm run db:migrate` fails, or under `docker compose up --build` the `migrate` container
+exits and `profile-service` never starts. Throw the database away — it is disposable — with
 `npm run db:reset`, then repeat the `docker compose up`, `db:migrate` and `db:seed` lines above.
-
-The same goes once after the move to PostgreSQL 16: a database the old 17 image created will not
-start under 16, and `db:reset` is what replaces it.
 
 **Port 3000 has one owner** — the container, or `npm run dev`. Stop one before starting the
 other; that is what the first line does, and it is a no-op if nothing was running. Skip it and
 you get `EADDRINUSE`.
 
 The reverse is the one to know about, because Docker hides it. If `npm run dev` holds the port
-when you `docker compose up`, the container cannot bind it and is left attached to no network —
-it then starts again without complaint while `localhost:3000` answers nothing and it reports
-`unhealthy`. Rebuild it:
+when you `docker compose up`, the container cannot bind it and is left attached to no network — a
+later `up` starts it without complaint, but `localhost:3000` answers nothing and it reports
+`unhealthy`. Stop `npm run dev`, then recreate it:
 
 ```bash
 docker compose up -d --force-recreate profile-service
@@ -163,7 +161,7 @@ docker compose up -d --force-recreate profile-service
 | | |
 |---|---|
 | `npm run dev` | run it locally, restarting on save |
-| `npm test` | unit tests — no database, no Docker, about a second |
+| `npm test` | unit tests — no database, no Docker, about two seconds |
 | `npm run test:int` | integration tests — starts its own PostgreSQL and RabbitMQ, so no setup |
 | `npm run typecheck` · `npm run lint` | both must pass |
 | `npm run build` | compile to `dist/` |
@@ -171,14 +169,14 @@ docker compose up -d --force-recreate profile-service
 | `npm run db:migrate` | apply migrations |
 | `npm run db:seed` | reload the sample runners (**truncates first**) |
 | `npm run events:republish` | write every profile's `ProfileUpdated` to the outbox again, revisions unchanged |
-| `npm run db:reset` | throw the database away and start it again |
+| `npm run db:reset` | throw away the stack's data — PostgreSQL, MinIO, RabbitMQ — and start PostgreSQL alone; then repeat the `docker compose up -d` line |
 | `npm run db:generate` | after changing `src/infrastructure/schema.ts`, write the migration for it |
 
 `npm run test:int` takes about twenty seconds, nearly all of it starting the containers — and it
 passes on a machine that has never seen this project.
 
-`npm run build && npm start` runs exactly what the image runs. It needs `.env` in place, and
-PostgreSQL and MinIO up — and RabbitMQ, for events to go out.
+`npm run build && npm start` runs exactly what the image runs. It needs `.env` and a migrated
+PostgreSQL; MinIO for the photo routes, RabbitMQ for events to go out.
 
 ## Project structure
 
@@ -198,8 +196,8 @@ Dependencies point inward only: `interface → application → domain ← infras
 | [docs/domain.md](docs/domain.md) | **authoritative.** What a profile is and the rules it obeys — start here |
 | [docs/openapi.yaml](docs/openapi.yaml) | the HTTP contract, derived from `domain.md`. Rendered at `/docs` |
 | [docs/profile-events.schema.json](docs/profile-events.schema.json) | the event contract: `ProfileUpdated` on RabbitMQ, in the team's JSON Schema format |
-| [compose.local-integration.yaml](compose.local-integration.yaml) | Profile for the team's local-integration stack: its own PostgreSQL and MinIO, its broker user, migrate, the service and an optional seed. Fill in the values named at its top |
+| [compose.local-integration.yaml](compose.local-integration.yaml) | Profile for the team's local-integration stack: its own PostgreSQL and MinIO, its broker user, migrate, the service and an optional seed. Follow the steps at its top |
 | [docs/build_plan.md](docs/build_plan.md) | why it is built this way, and what is deliberately left undone |
 
-Tests hold the code to `openapi.yaml` and `profile-events.schema.json` on every run. Nothing enforces `domain.md` — and it still
-wins: where the code and `domain.md` disagree, the code is the bug.
+Tests hold the code to `openapi.yaml` and `profile-events.schema.json`. Nothing enforces
+`domain.md` — and it still wins: where the code and `domain.md` disagree, the code is the bug.

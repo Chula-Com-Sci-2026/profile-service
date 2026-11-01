@@ -61,5 +61,5 @@ When one fails, the document is usually what needs fixing — not the test.
 - `Profile` is immutable; `update()` returns a new one.
 - Repository reads report absence (`null`), writes raise conflicts.
 - Commits: Conventional Commits, scope is the layer — `fix(domain):`, `docs(plan):`.
-- The local database is disposable; `npm run db:reset` then `npm run db:seed`.
+- The local database is disposable; `npm run db:reset`, then the README's `docker compose up -d …`, `db:migrate` and `db:seed` lines.
 - Port 3000 has one owner: the compose container *or* `npm run dev`, never both.
