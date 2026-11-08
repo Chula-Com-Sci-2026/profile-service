@@ -77,4 +77,12 @@ export default tseslint.config(
     ['**/infrastructure/**', '**/scripts/**', 'drizzle-orm', 'drizzle-orm/*', 'pg'],
     'interface/http/ talks to application/ and domain/ — never to the database directly.',
   ),
+
+  // Not a layer, the same mechanism: a component test knows only what a client of the running
+  // container could know, so the suite that tests the image cannot reach into the source.
+  zone(
+    ['tests/component/**/*.ts'],
+    ['**/src/**'],
+    'tests/component/ drives the built image from outside — HTTP, the broker, storage — and imports nothing from src/.',
+  ),
 )

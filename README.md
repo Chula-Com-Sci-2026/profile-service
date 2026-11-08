@@ -179,9 +179,9 @@ passes on a machine that has never seen this project.
 Each suite covers what the one before cannot. Unit tests run the code in memory, against fakes.
 Integration tests run it against a real PostgreSQL and RabbitMQ, inside the test process.
 Component tests run the built image as a black box — HTTP in, `ProfileUpdated` out, photos through
-MinIO — importing nothing from `src/`, so they also cover the image itself, the wiring in
-`src/index.ts` and shutdown. `npm run test:component` takes about twenty-five seconds once Docker
-has the image's layers cached; the first run builds them.
+MinIO — importing nothing from `src/`, which `npm run lint` enforces, so they also cover the image
+itself, the wiring in `src/index.ts` and shutdown. `npm run test:component` takes about twenty-five
+seconds once Docker has the image's layers cached; the first run builds them.
 
 `npm run build && npm start` runs exactly what the image runs. It needs `.env` and a migrated
 PostgreSQL; MinIO for the photo routes, RabbitMQ for events to go out.
