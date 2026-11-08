@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 import { sql } from 'drizzle-orm'
 import { attachPhoto } from '../src/application/attach-photo.ts'
 import { createPhotoUpload } from '../src/application/create-photo-upload.ts'
-import { StorageUnavailableError } from '../src/application/errors.ts'
 import { saveProfile } from '../src/application/save-profile.ts'
 import type { Profile } from '../src/domain/profile.ts'
 import { loadDatabaseUrl, loadObjectStorage } from '../src/infrastructure/config.ts'
@@ -15,7 +14,7 @@ import { createPhotoStorage } from '../src/infrastructure/minio-photo-storage.ts
 import { photoUrlFor } from '../src/infrastructure/photo-url.ts'
 import { toContent } from '../src/interface/http/profile-input.ts'
 import { profileSave } from '../src/interface/http/validators.ts'
-import { seedPhotos } from './seed-photos.ts'
+import { putPhoto, seedPhotos } from './seed-photos.ts'
 
 /**
  * Loads `seed.json` into the database, and `photos/` into object storage.
@@ -89,10 +88,7 @@ try {
       },
       // The URL is signed over the *public* endpoint, so whoever runs this must be able to reach
       // it — from the host in development, that is OBJECT_STORAGE_PUBLIC_ENDPOINT.
-      put: (url, bytes) =>
-        fetch(url, { method: 'PUT', body: bytes }).catch((error: unknown) => {
-          throw new StorageUnavailableError(error)
-        }),
+      put: putPhoto,
       log: (line) => console.log(line),
       warn: (line) => console.warn(line),
     },

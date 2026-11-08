@@ -15,6 +15,18 @@ export type PhotoSeeding = {
 }
 
 /**
+ * PUTs a seed photo to a signed upload URL, as a browser would, with its content type. The
+ * signature does not cover the type, so storage keeps whatever the upload says and serves the photo
+ * back with it — without one, MinIO answers `binary/octet-stream`. The seed's photos are PNG files.
+ * Rejects with StorageUnavailableError when it cannot reach storage.
+ */
+export function putPhoto(url: string, bytes: Uint8Array): Promise<{ ok: boolean; status: number }> {
+  return fetch(url, { method: 'PUT', body: bytes, headers: { 'content-type': 'image/png' } }).catch((error: unknown) => {
+    throw new StorageUnavailableError(error)
+  })
+}
+
+/**
  * Seeds photos the way a client adds one: ask for an upload link, PUT the bytes to it, then attach
  * the key it minted. No shortcut through the S3 client, so seeding exercises the handshake the API
  * offers — and the key cannot be written into seed.json, because it carries a uuid that exists only

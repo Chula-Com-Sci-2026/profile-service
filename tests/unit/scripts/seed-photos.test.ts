@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { StorageUnavailableError } from '../../../src/application/errors.ts'
 import { Profile } from '../../../src/domain/profile.ts'
-import { seedPhotos, type PhotoSeeding } from '../../../scripts/seed-photos.ts'
+import { putPhoto, seedPhotos, type PhotoSeeding } from '../../../scripts/seed-photos.ts'
+import { localServer } from '../infrastructure/local-server.ts'
 
 const RAY = '11111111-1111-4111-8111-111111111111'
 const BEAM = '44444444-4444-4444-8444-444444444444'
@@ -76,5 +77,23 @@ describe('seedPhotos', () => {
   it('stops on an upload storage answered and refused — that is a misconfiguration, not an outage', async () => {
     const { seeding } = aSeeding({ put: async () => ({ ok: false, status: 403 }) })
     await expect(seedPhotos([BEAM], seeding)).rejects.toThrow(/403/)
+  })
+})
+
+describe('putPhoto', () => {
+  it('uploads the bytes as image/png, so storage serves the photo back as an image', async () => {
+    const storage = await localServer(() => ({ status: 200 }))
+    try {
+      expect((await putPhoto(`${storage.url}photos/${BEAM}/abc`, BYTES)).ok).toBe(true)
+      expect(storage.received.map(({ method, headers }) => [method, headers['content-type']])).toEqual([['PUT', 'image/png']])
+    } finally {
+      await storage.close()
+    }
+  })
+
+  it('rejects with StorageUnavailableError when storage cannot be reached', async () => {
+    const storage = await localServer(() => ({ status: 200 }))
+    await storage.close()
+    await expect(putPhoto(`${storage.url}photos/${BEAM}/abc`, BYTES)).rejects.toBeInstanceOf(StorageUnavailableError)
   })
 })
