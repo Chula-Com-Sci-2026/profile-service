@@ -19,6 +19,7 @@ A demonstration of microservices + DDD, so architectural clarity outranks clever
 npm run dev        # node --watch, pretty logs
 npm test           # unit, ~1s, no Docker
 npm run test:int   # integration — starts its own PostgreSQL and RabbitMQ via Testcontainers
+npm run test:component   # component — builds the image, runs it black-box beside its own stack
 npm run typecheck && npm run lint    # both must pass
 npm run build      # tsc -> dist/
 ```

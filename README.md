@@ -163,6 +163,7 @@ docker compose up -d --force-recreate profile-service
 | `npm run dev` | run it locally, restarting on save |
 | `npm test` | unit tests — no database, no Docker, about two seconds |
 | `npm run test:int` | integration tests — starts its own PostgreSQL and RabbitMQ, so no setup |
+| `npm run test:component` | component tests — builds the image and runs it beside its own PostgreSQL, MinIO and RabbitMQ; run by hand |
 | `npm run typecheck` · `npm run lint` | both must pass |
 | `npm run build` | compile to `dist/` |
 | `npm start` | run what `build` produced — this is what the container runs |
@@ -174,6 +175,13 @@ docker compose up -d --force-recreate profile-service
 
 `npm run test:int` takes about twenty seconds, nearly all of it starting the containers — and it
 passes on a machine that has never seen this project.
+
+Each suite covers what the one before cannot. Unit tests run the code in memory, against fakes.
+Integration tests run it against a real PostgreSQL and RabbitMQ, inside the test process.
+Component tests run the built image as a black box — HTTP in, `ProfileUpdated` out, photos through
+MinIO — importing nothing from `src/`, so they also cover the image itself, the wiring in
+`src/index.ts` and shutdown. `npm run test:component` takes about twenty-five seconds once Docker
+has the image's layers cached; the first run builds them.
 
 `npm run build && npm start` runs exactly what the image runs. It needs `.env` and a migrated
 PostgreSQL; MinIO for the photo routes, RabbitMQ for events to go out.
