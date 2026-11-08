@@ -7,9 +7,18 @@ import { type StackAccess, startStack } from './stack.ts'
  * objects — and from there only through the service's public interfaces.
  */
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
-  const { access, stop } = await startStack()
-  project.provide('component', access)
-  return stop
+  let stack: Awaited<ReturnType<typeof startStack>>
+  try {
+    stack = await startStack()
+  } catch (error) {
+    // Vitest 5 prints an error thrown from a globalSetup as its own "code.charCodeAt is not a
+    // function", and the real one never appears — so it is said here, before it is rethrown.
+    const reason = error instanceof Error ? error.message : String(error)
+    console.error(`\nthe component stack did not start: ${reason}\n`)
+    throw error
+  }
+  project.provide('component', stack.access)
+  return stack.stop
 }
 
 declare module 'vitest' {

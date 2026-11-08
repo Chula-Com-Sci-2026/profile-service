@@ -112,13 +112,17 @@ export function serviceEnvironment(storageUrl: string): Record<string, string> {
   }
 }
 
-/** compose's `profile-service`: the image as it ships, ready once /ready answers 200. */
+/**
+ * compose's `profile-service`: the image as it ships, ready once /ready answers 200. A service
+ * that exits instead — refusing its configuration, say — fails the wait at once, and the error
+ * carries its last log lines, so the reason is the service's own sentence.
+ */
 export function startProfileService(network: string, storageUrl: string): Promise<StartedTestContainer> {
   return new GenericContainer(SERVICE_IMAGE)
     .withNetworkMode(network)
     .withEnvironment(serviceEnvironment(storageUrl))
     .withExposedPorts(3000)
-    .withWaitStrategy(Wait.forHttp('/ready', 3000).forStatusCode(200))
+    .withWaitStrategy(Wait.forHttp('/ready', 3000, { abortOnContainerExit: true }).forStatusCode(200))
     .withStartupTimeout(60_000)
     .start()
 }
@@ -126,10 +130,20 @@ export function startProfileService(network: string, storageUrl: string): Promis
 type Stoppable = { stop: () => Promise<unknown> }
 type Track = <T extends Stoppable>(thing: T) => T
 
-/** A one-shot job: started, waited for until it exits 0, then removed. */
-async function runOnce(job: GenericContainer, track: Track): Promise<void> {
-  const finished = track(await job.withWaitStrategy(Wait.forOneShotStartup()).withStartupTimeout(60_000).start())
-  await finished.stop()
+/**
+ * A one-shot job: started, waited for until it exits 0, then removed. Testcontainers reports a
+ * job that exits non-zero only by its container id, so its output is kept and put in the error.
+ */
+async function runOnce(name: string, job: GenericContainer, track: Track): Promise<void> {
+  const output: string[] = []
+  job.withLogConsumer((stream) => stream.on('data', (line: unknown) => output.push(String(line))))
+  try {
+    const finished = track(await job.withWaitStrategy(Wait.forOneShotStartup()).withStartupTimeout(60_000).start())
+    await finished.stop()
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`${name} failed: ${reason}; its output:\n${output.join('').trim()}`, { cause: error })
+  }
 }
 
 /** Built from this checkout, through BuildKit — the Dockerfile's `# syntax=` line needs it. Docker's layer cache applies. */
@@ -175,7 +189,11 @@ async function startStorage(network: StartedNetwork, track: Track): Promise<Star
       .withWaitStrategy(Wait.forHttp('/minio/health/ready', 9000))
       .start(),
   )
-  await runOnce(new GenericContainer(MINIO_IMAGE).withNetwork(network).withEntrypoint(['sh', '-c']).withCommand([BUCKET_JOB]), track)
+  await runOnce(
+    'the bucket job',
+    new GenericContainer(MINIO_IMAGE).withNetwork(network).withEntrypoint(['sh', '-c']).withCommand([BUCKET_JOB]),
+    track,
+  )
   return storage
 }
 
@@ -196,6 +214,11 @@ export async function startStack(): Promise<{ access: StackAccess; stop: () => P
     if (failures.length > 0) throw failures[0]
   }
 
+  // Testcontainers reads a container's logs over a socket it unrefs. When a container exits during
+  // its wait, that read can be all that is left pending, and Node then exits mid-await — silently,
+  // with code 0 — before the failure is reported. This holds the event loop open until the stack
+  // has started, or has failed and been stopped.
+  const keepAlive = setInterval(() => undefined, 1_000)
   try {
     const network = track(await new Network().start())
 
@@ -209,6 +232,7 @@ export async function startStack(): Promise<{ access: StackAccess; stop: () => P
     const [, , rabbitmq, minio] = await Promise.all([image, database, broker, storage])
 
     await runOnce(
+      'the migration',
       new GenericContainer(SERVICE_IMAGE)
         .withNetwork(network)
         .withCommand(['node', 'dist/migrate.js'])
@@ -231,5 +255,7 @@ export async function startStack(): Promise<{ access: StackAccess; stop: () => P
   } catch (error) {
     await stop().catch(() => undefined)
     throw error
+  } finally {
+    clearInterval(keepAlive)
   }
 }
