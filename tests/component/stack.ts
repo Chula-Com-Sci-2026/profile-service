@@ -165,7 +165,7 @@ async function startDatabase(network: StartedNetwork, track: Track): Promise<Sta
 }
 
 /** compose's `rabbitmq` and `create-broker-user`. */
-async function startBroker(network: StartedNetwork, track: Track): Promise<StartedRabbitMQContainer> {
+async function startRabbitMq(network: StartedNetwork, track: Track): Promise<StartedRabbitMQContainer> {
   const broker = track(await new RabbitMQContainer(RABBITMQ_IMAGE).withNetwork(network).withNetworkAliases('rabbitmq').start())
   for (const command of [
     ['rabbitmqctl', 'add_user', BROKER_USER.user, BROKER_USER.password],
@@ -226,7 +226,7 @@ export async function startStack(): Promise<{ access: StackAccess; stop: () => P
     // on, so a failure still leaves each container that did start tracked, and stopped below.
     const image = buildServiceImage()
     const database = startDatabase(network, track)
-    const broker = startBroker(network, track)
+    const broker = startRabbitMq(network, track)
     const storage = startStorage(network, track)
     await Promise.allSettled([image, database, broker, storage])
     const [, , rabbitmq, minio] = await Promise.all([image, database, broker, storage])
