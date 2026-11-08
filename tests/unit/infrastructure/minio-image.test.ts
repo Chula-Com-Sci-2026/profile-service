@@ -7,6 +7,7 @@ type Compose = { services: Record<string, { image?: string; volumes?: string[] }
 const compose = parse(readFileSync('docker-compose.yml', 'utf8')) as Compose
 const minio = compose.services['minio']
 const bucket = compose.services['create-bucket']
+const component = readFileSync('tests/component/stack.ts', 'utf8').match(/MINIO_IMAGE = '([^']+)'/)?.[1]
 
 describe('the MinIO image', () => {
   it('is Chainguard’s, pinned by digest, because MinIO stopped publishing images in October 2025', () => {
@@ -19,5 +20,9 @@ describe('the MinIO image', () => {
 
   it('keeps /data in an anonymous volume, as MinIO’s own image did, so a recreate keeps the photos and db:reset does not', () => {
     expect(minio?.volumes).toEqual(['/data'])
+  })
+
+  it('is the same for the component suite, which runs the image beside it', () => {
+    expect(component).toBe(minio?.image)
   })
 })
