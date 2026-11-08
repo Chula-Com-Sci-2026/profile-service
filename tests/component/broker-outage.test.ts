@@ -34,11 +34,14 @@ describe('Broker outage, outbox catches up', () => {
     await expectContract('saveProfile', 200, await ray.put(ME, aProfile()))
     await events.next({ id: ray.id, revision: 1 })
 
-    // And the broker is stopped — the container itself, as an outage would take it
+    // And the broker is stopped — the container itself, as an outage would take it. Docker unmaps a
+    // stopped container's ports, so there is not even an address left to connect to
     await events.close()
     await stopBroker()
     brokerStopped = true
-    await expect(listenForProfileUpdated(), 'a connection while the broker is stopped').rejects.toThrow()
+    await expect(listenForProfileUpdated(), 'the stopped broker has no address').rejects.toThrow(
+      'the broker has no host port for 5672',
+    )
 
     // When Ray saves a profile
     const saved = await ray.put(ME, aProfile({ availability: 'Sat · 07:00' }))
