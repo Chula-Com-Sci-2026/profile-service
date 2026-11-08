@@ -12,6 +12,12 @@ import { BROKER_ADMIN } from './stack.ts'
 const EXCHANGE = 'cra.events'
 const ROUTING_KEY = 'ProfileUpdated'
 
+/**
+ * How long connecting may take — the service's own sender allows the same. Without it, a broker
+ * that takes the TCP connection but never answers holds the test until Vitest's own timeout.
+ */
+const CONNECT_TIMEOUT_MS = 5_000
+
 const { brokerContainerId } = inject('component')
 
 /** The parts of an event the tests match on; the rest is checked against the event schema. */
@@ -49,7 +55,7 @@ async function brokerAddress(): Promise<string> {
  * away with the connection, or with the broker.
  */
 export async function listenForProfileUpdated(): Promise<ProfileUpdatedQueue> {
-  const connection = await connect(await brokerAddress())
+  const connection = await connect(await brokerAddress(), { timeout: CONNECT_TIMEOUT_MS })
   // A broker that goes away closes this connection. That must not crash the test worker: the
   // scenario waiting on it fails with its own message instead.
   connection.on('error', () => undefined)
