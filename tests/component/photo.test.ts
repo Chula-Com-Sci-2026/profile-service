@@ -31,6 +31,9 @@ describe('A photo through real storage', () => {
       201,
       await ray.post(`${ME}/photo-uploads`),
     )
+    // The link is signed for the storage address a client uses — the service's public endpoint,
+    // which here is this test process's — not the in-network name the service itself reaches
+    expect(new URL(upload.uploadUrl).origin, 'where the upload link points').toBe(new URL(storageUrl).origin)
     expect(await statusOf(await fetch(upload.uploadUrl, { method: 'PUT', body: PHOTO }))).toBe(200)
     await expectContract('attachPhoto', 200, await ray.put(`${ME}/photo`, { photoRef: upload.photoRef }))
 
