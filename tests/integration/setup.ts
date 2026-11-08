@@ -82,6 +82,10 @@ export default async function setup(project: TestProject): Promise<() => Promise
     // The teardown closure is only handed back on success, so stop the containers ourselves
     // rather than leaving them running for every failed start.
     await stop()
+    // Vitest 5 can print an error thrown from a globalSetup as its own "code.charCodeAt is not a
+    // function", and the real one never appears — so it is said here, before it is rethrown.
+    const reason = error instanceof Error ? error.message : String(error)
+    console.error(`\nthe integration stack did not start: ${reason}\n`)
     throw error
   }
 }
