@@ -14,12 +14,17 @@ services:
       retries: 15
 
   # MinIO speaks the S3 API, so the same code runs against real S3 by changing an endpoint —
-  # the dependency is on a protocol, not a vendor. AGPL v3, so the tag is pinned rather than
-  # tracking latest: a licence change arriving silently on `docker compose pull` is not a
-  # surprise anyone wants.
+  # the dependency is on a protocol, not a vendor. MinIO stopped publishing images in October
+  # 2025 and quay.io no longer serves its old tags, so this is Chainguard's build, as the team's
+  # integration stack runs. Pinned by digest rather than tracking latest: MinIO is AGPL v3, and a
+  # licence change arriving silently on `docker compose pull` is not a surprise anyone wants.
+  # The image declares no volume, unlike MinIO's own, so /data is one here: a recreate keeps the
+  # photos, `db:reset` does not.
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: cgr.dev/chainguard/minio@sha256:869ca3178831d9f521ea02258a0f0d4fbc1e9f84302e707514e1f861b860865d
     command: ["server", "/data", "--console-address", ":9001"]
+    volumes:
+      - /data
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -42,8 +47,10 @@ services:
   # Named for the service, not for what is in it. Keys are `photos/{id}/{uuid}`, and a
   # bucket also called `photos` makes every path-style URL read /photos/photos/… — and
   # leaves nowhere to put anything this service might store later.
+  #
+  # The MinIO image carries `mc` and `sh`, so the job runs on it too: one image to pin.
   create-bucket:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: cgr.dev/chainguard/minio@sha256:869ca3178831d9f521ea02258a0f0d4fbc1e9f84302e707514e1f861b860865d
     depends_on:
       minio:
         condition: service_healthy

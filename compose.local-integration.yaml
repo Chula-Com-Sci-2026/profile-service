@@ -48,7 +48,7 @@ services:
 
   # Photos. Published on 127.0.0.1 only, because the browser loads photos from the host.
   profile-minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: cgr.dev/chainguard/minio@sha256:869ca3178831d9f521ea02258a0f0d4fbc1e9f84302e707514e1f861b860865d
     command: ["server", "/data"]
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -65,7 +65,7 @@ services:
 
   # The bucket: anyone can read a photo by its address, but no one can list them.
   profile-create-bucket:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: cgr.dev/chainguard/minio@sha256:869ca3178831d9f521ea02258a0f0d4fbc1e9f84302e707514e1f861b860865d
     depends_on:
       profile-minio:
         condition: service_healthy
