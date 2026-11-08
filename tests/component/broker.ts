@@ -92,3 +92,20 @@ export async function listenForProfileUpdated(): Promise<ProfileUpdatedQueue> {
     throw error
   }
 }
+
+/**
+ * The outage scenario's one reach past the public interfaces: Docker-level control of the broker's
+ * container. Testcontainers can `restart()` a container, but the scenario must act while the broker
+ * is down, so it stops and starts it through Docker. A graceful stop, as `docker stop` gives;
+ * the container is kept, with the users, the grant and the exchange in its volume.
+ */
+export async function stopBroker(): Promise<void> {
+  const client = await getContainerRuntimeClient()
+  await client.container.stop(client.container.getById(brokerContainerId), { timeout: 10_000 })
+}
+
+/** The same container, started again. Its host port may change; `listenForProfileUpdated` asks. */
+export async function startBroker(): Promise<void> {
+  const client = await getContainerRuntimeClient()
+  await client.container.start(client.container.getById(brokerContainerId))
+}
