@@ -6,7 +6,7 @@ import { aProfile, aRunner, documentedBody } from './client.ts'
 
 const ME = '/api/v1/me/profile'
 
-/** The test's own queue on cra.events, bound before any scenario acts. */
+/** The test's own queue on cra.events, bound before any scenario acts; unset if `beforeAll` failed. */
 let events: ProfileUpdatedQueue
 
 beforeAll(async () => {
@@ -14,7 +14,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await events.close()
+  await events?.close()
 })
 
 describe('Saving and viewing', () => {

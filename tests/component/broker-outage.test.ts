@@ -6,6 +6,7 @@ import { eventually } from './eventually.ts'
 
 const ME = '/api/v1/me/profile'
 
+/** The test's own queue; unset if `beforeAll` failed. */
 let events: ProfileUpdatedQueue
 /** Set while this file has the broker stopped, so a failure part-way still hands the next file a whole stack. */
 let brokerStopped = false
@@ -15,8 +16,15 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await events.close()
+  await events?.close()
+  // Whatever state the scenario left the broker in, the next file gets one that is running and
+  // taking connections: a started container is not yet a broker that answers.
   if (brokerStopped) await startBroker()
+  const ready = await eventually('the broker to take connections again', () => listenForProfileUpdated(), {
+    timeoutMs: 60_000,
+    intervalMs: 500,
+  })
+  await ready.close()
 })
 
 describe('Broker outage, outbox catches up', () => {
